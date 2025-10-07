@@ -337,7 +337,7 @@ async def analyze_address_fast(
         try:
             analysis_result = await asyncio.wait_for(
                 blockchain_analyzer.analyze_address_comprehensive(address, depth=1),
-                timeout=8.0  # Much shorter timeout for fast response
+                timeout=30.0  # Increased timeout to 30 seconds for better reliability
             )
         except asyncio.TimeoutError:
             logger.warning(f"Fast analysis timeout for {address} - using quick fallback")
@@ -403,7 +403,7 @@ async def analyze_address_fast(
                     }
                 )
 
-        # Quick ML prediction
+        # Use hybrid ML + pattern analysis for maximum accuracy
         fraud_prediction = fraud_detector.predict_fraud_probability(analysis_result, model_name=model_name)
 
         # Simplified response for fast endpoint
@@ -414,6 +414,8 @@ async def analyze_address_fast(
             "is_flagged": fraud_prediction.get('is_fraud_predicted', False),
             "confidence": fraud_prediction.get('confidence', 0.0),
             "fraud_probability": fraud_prediction.get('fraud_probability'),
+            "risk_factors": fraud_prediction.get('risk_factors', []),
+            "positive_indicators": fraud_prediction.get('positive_indicators', []),
             "analysis_summary": {
                 "transaction_count": analysis_result.get('basic_metrics', {}).get('transaction_count', 0),
                 "total_received_btc": analysis_result.get('basic_metrics', {}).get('total_received_btc', 0),

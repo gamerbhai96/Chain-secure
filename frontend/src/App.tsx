@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   ThemeProvider, 
   CssBaseline, 
@@ -45,10 +45,12 @@ import {
 } from '@mui/icons-material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lightTheme, darkTheme } from './themes';
+import { SecureTraceNav } from './components/SecureTraceNav';
 import { BitScanAPI } from './services/api';
 import type { AnalysisResponse } from './types/api';
 import { downloadPdfReportWithCharts } from './utils/reportGenerator';
 import WalletCredibilityChart from './components/WalletCredibilityChart';
+import InflowOutflowChart from './components/InflowOutflowChart';
 
 // Create a query client
 const queryClient = new QueryClient();
@@ -68,7 +70,21 @@ const App: React.FC = () => {
   const lastExpandedRef = useRef<number | null>(null);
   const [showApproach, setShowApproach] = useState(false);
   const [showCharts, setShowCharts] = useState(false);
-  
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const isEmptyWallet = useMemo(() => {
+    if (!analysis) return false;
+    const summary = analysis.analysis_summary;
+    return summary.transaction_count === 0 &&
+      summary.total_received_btc === 0 &&
+      summary.total_sent_btc === 0;
+  }, [analysis]);
+
+  useEffect(() => {
+    if (isEmptyWallet) {
+      setShowCharts(false);
+    }
+  }, [isEmptyWallet]);
+
   // Handle FAQ auto-scroll when accordion expands
   useEffect(() => {
     if (expandedFAQ !== false && expandedFAQ !== lastExpandedRef.current && faqContainerRef.current) {
@@ -163,19 +179,19 @@ const App: React.FC = () => {
       <ThemeProvider theme={isDarkMode ? darkTheme : lightTheme}>
         <CssBaseline />
 
-        {/* SecureDApp-style Grid Background */}
+        {/* BitScan immersive grid background */}
         <Box
           sx={{
             minHeight: '100vh',
-            background: isDarkMode ? '#0B1120' : '#f8fafc',
+            background: isDarkMode ? '#0d1629' : '#f8fafc',
             backgroundImage: isDarkMode 
               ? `
-                linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px)
+                linear-gradient(rgba(37, 99, 235, 0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(37, 99, 235, 0.08) 1px, transparent 1px)
               `
               : `
-                linear-gradient(rgba(0, 0, 0, 0.06) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0, 0, 0, 0.06) 1px, transparent 1px)
+                linear-gradient(rgba(37, 99, 235, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(37, 99, 235, 0.05) 1px, transparent 1px)
               `,
             backgroundSize: '80px 80px',
             position: 'relative',
@@ -188,187 +204,83 @@ const App: React.FC = () => {
               right: 0,
               bottom: 0,
               background: isDarkMode 
-                ? 'radial-gradient(ellipse at center, rgba(59, 130, 246, 0.15) 0%, transparent 70%)'
-                : 'radial-gradient(ellipse at center, rgba(59, 130, 246, 0.05) 0%, transparent 70%)',
+                ? 'radial-gradient(ellipse at top left, rgba(79, 141, 245, 0.2) 0%, transparent 60%), radial-gradient(ellipse at bottom right, rgba(14, 116, 144, 0.18) 0%, transparent 65%)'
+                : 'radial-gradient(ellipse at center, rgba(59, 130, 246, 0.1) 0%, transparent 70%)',
               pointerEvents: 'none'
             }
           }}
         >
-          <Container maxWidth="lg" sx={{ py: 4, position: 'relative' }}>
-            {/* Professional Header with Controls */}
+          <SecureTraceNav
+            isDarkMode={isDarkMode}
+            onToggleTheme={() => setIsDarkMode((prev) => !prev)}
+            onShowHowWeWork={() => setShowApproach(true)}
+            onShowFAQ={() => setShowFAQ(true)}
+            onShowHistory={() => setShowHistory(true)}
+          />
+
+          <Container maxWidth="lg" sx={{ py: { xs: 6, md: 8 }, position: 'relative' }}>
+            {/* BitScan hero */}
             <Fade in timeout={1000}>
-              <Box sx={{
+              <Box component="section" id="overview" sx={{
                 display: 'flex',
+                flexDirection: { xs: 'column', md: 'row' },
+                alignItems: { xs: 'flex-start', md: 'center' },
                 justifyContent: 'space-between',
-                alignItems: 'center',
-                mb: 6,
-                background: isDarkMode ? 'rgba(15, 23, 42, 0.6)' : 'rgba(255, 255, 255, 0.95)',
-                backdropFilter: 'blur(24px)',
-                borderRadius: '16px',
-                px: 4,
-                py: 2.5,
-                border: isDarkMode ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.1)',
-                boxShadow: isDarkMode 
-                  ? '0 4px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05)'
-                  : '0 4px 24px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.05)',
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  background: isDarkMode ? 'rgba(15, 23, 42, 0.7)' : 'rgba(255, 255, 255, 1)',
-                  border: isDarkMode ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.15)',
-                  boxShadow: isDarkMode 
-                    ? '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08)'
-                    : '0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.06)'
-                }
+                gap: { xs: 6, md: 8 },
+                mb: { xs: 6, md: 8 }
               }}>
-                {/* Left side - Logo and Title */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <Box
-                    component="img"
-                    src="/logo copy.png"
-                    alt="SecureDApp Logo"
-                    sx={{
-                      width: 100,
-                      height: 100,
-                      objectFit: 'contain',
-                      filter: 'drop-shadow(0 8px 25px rgba(37, 99, 235, 0.4))'
-                    }}
-                  />
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <Box>
                     <Typography
-                      variant="h4"
-                      component="h1"
+                      variant="overline"
                       sx={{
-                        background: 'linear-gradient(45deg, #2563eb 0%, #0891b2 50%, #06b6d4 100%)',
-                        backgroundClip: 'text',
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                        fontWeight: 700,
-                        letterSpacing: '-0.02em',
-                        fontFamily: '"Inter", "Roboto", sans-serif',
-                        mb: 0.5
-                      }}
-                    >
-                      SecureDApp
-                    </Typography>
-                    <Typography
-                      variant="subtitle1"
-                      sx={{
-                        color: isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.65)',
-                        fontWeight: 400,
-                        fontFamily: '"Inter", "Roboto", sans-serif',
-                        transition: 'color 0.3s ease'
+                        letterSpacing: '0.44em',
+                        textTransform: 'uppercase',
+                        color: isDarkMode ? 'rgba(226, 232, 240, 0.75)' : 'rgba(15, 23, 42, 0.65)',
+                        fontWeight: 600,
+                        display: 'block',
+                        mb: 1
                       }}
                     >
                       BitScan
                     </Typography>
+                    <Typography
+                      variant="h2"
+                      component="h1"
+                      sx={{
+                        fontSize: { xs: '2.6rem', md: '3.5rem' },
+                        fontWeight: 700,
+                        lineHeight: 1.08,
+                        background: 'linear-gradient(120deg, #60a5fa 0%, #38bdf8 60%, #22d3ee 100%)',
+                        backgroundClip: 'text',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent'
+                      }}
+                    >
+                      BTC Fraud Detection & Exposure Analytics
+                    </Typography>
+                    <Typography
+                      variant="body1"
+                      sx={{
+                        mt: 2,
+                        maxWidth: 520,
+                        color: isDarkMode ? 'rgba(203, 213, 225, 0.75)' : 'rgba(30, 41, 59, 0.72)',
+                        fontSize: '1.05rem',
+                        lineHeight: 1.7
+                      }}
+                    >
+                      BitScan pinpoints suspicious BTC flows, aggregates exposure histories, and prioritises alerts so compliance teams can neutralise fraud activity in minutes.
+                    </Typography>
                   </Box>
                 </Box>
 
-                {/* Right side - Professional Controls */}
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                  {/* Theme Toggle Button */}
-                  <IconButton
-                    onClick={() => setIsDarkMode(!isDarkMode)}
-                    sx={{
-                      background: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                      color: isDarkMode ? 'white' : '#0f172a',
-                      width: 44,
-                      height: 44,
-                      border: isDarkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.12)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '10px',
-                      '&:hover': {
-                        background: isDarkMode ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)',
-                        border: '1px solid rgba(59, 130, 246, 0.3)',
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)'
-                      },
-                      transition: 'all 0.2s ease'
-                    }}
-                    title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-                  >
-                    <Box sx={{ fontSize: 20 }}>{isDarkMode ? '🌙' : '☀️'}</Box>
-                  </IconButton>
-
-                  {/* FAQ Button */}
-                  <IconButton
-                    onClick={() => setShowFAQ(!showFAQ)}
-                    sx={{
-                      background: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                      color: isDarkMode ? 'white' : '#0f172a',
-                      width: 44,
-                      height: 44,
-                      border: isDarkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.12)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '10px',
-                      '&:hover': {
-                        background: 'rgba(255, 152, 0, 0.15)',
-                        border: '1px solid rgba(255, 152, 0, 0.3)',
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 4px 12px rgba(255, 152, 0, 0.2)'
-                      },
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    <HelpIcon sx={{ fontSize: 20 }} />
-                  </IconButton>
-
-                  {/* History Button */}
-                  <IconButton
-                    onClick={() => setShowHistory(!showHistory)}
-                    sx={{
-                      background: scanHistory.length > 0
-                        ? 'rgba(76, 175, 80, 0.15)'
-                        : isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                      color: isDarkMode ? 'white' : '#0f172a',
-                      width: 44,
-                      height: 44,
-                      border: scanHistory.length > 0 
-                        ? '1px solid rgba(76, 175, 80, 0.3)'
-                        : isDarkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.12)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '10px',
-                      position: 'relative',
-                      '&:hover': {
-                        background: scanHistory.length > 0
-                          ? 'rgba(76, 175, 80, 0.25)'
-                          : isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
-                        border: '1px solid rgba(76, 175, 80, 0.4)',
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 4px 12px rgba(76, 175, 80, 0.2)'
-                      },
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    <HistoryIcon sx={{ fontSize: 20 }} />
-                    {scanHistory.length > 0 && (
-                      <Box sx={{
-                        position: 'absolute',
-                        top: -6,
-                        right: -6,
-                        background: '#f44336',
-                        color: 'white',
-                        borderRadius: '50%',
-                        width: 20,
-                        height: 20,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.7rem',
-                        fontWeight: 'bold',
-                        border: '2px solid white'
-                      }}>
-                        {scanHistory.length}
-                      </Box>
-                    )}
-                  </IconButton>
-                </Box>
+                <Box sx={{ flex: 1 }} />
               </Box>
             </Fade>
 
             {/* System Capabilities Cards */}
             <Slide in timeout={1200}>
-              <Box sx={{ mb: 6 }}>
+              <Box component="section" id="capabilities" sx={{ mb: 6 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
                   {[
                     { icon: <AnalyticsIcon />, label: 'Real-Time Analysis', value: 'Live API', color: '#059669', description: 'Blockchain data' },
@@ -407,6 +319,27 @@ const App: React.FC = () => {
                 </Box>
               </Box>
             </Slide>
+
+            <Box
+              component="section"
+              id="reports"
+              sx={{
+                mb: 6,
+                px: { xs: 2, md: 4 },
+                py: { xs: 4, md: 6 },
+                borderRadius: 24,
+                background: isDarkMode ? 'rgba(15, 23, 42, 0.4)' : 'rgba(241, 245, 249, 0.6)',
+                border: isDarkMode ? '1px solid rgba(96, 165, 250, 0.2)' : '1px solid rgba(148, 163, 184, 0.2)',
+                backdropFilter: 'blur(12px)',
+              }}
+            >
+              <Typography variant="h4" sx={{ fontWeight: 600, mb: 1.5 }}>
+                Reports & Evidence Packs
+              </Typography>
+              <Typography variant="body1" sx={{ maxWidth: 720, color: isDarkMode ? 'rgba(226, 232, 240, 0.78)' : 'rgba(30, 41, 59, 0.7)' }}>
+                Export BitScan assessments with charts, counterparties, and timeline evidence in one click. Use this section to trigger PDF generation, shareable links, or integrate with your workflow tools.
+              </Typography>
+            </Box>
 
             {/* Scan History Section - Converted to Modal */}
             {showHistory && (
@@ -865,64 +798,87 @@ const App: React.FC = () => {
                       </Typography>
                       <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                         <Chip
-                          icon={getRiskIcon(analysis.risk_level)}
-                          label={`${analysis.risk_level} RISK`}
+                          icon={isEmptyWallet ? <HistoryIcon /> : getRiskIcon(analysis.risk_level)}
+                          label={isEmptyWallet ? 'NO ON-CHAIN ACTIVITY' : `${analysis.risk_level} RISK`}
                           sx={{
-                            background: `${getRiskColor(analysis.risk_level)}20`,
-                            color: getRiskColor(analysis.risk_level),
-                            border: `1px solid ${getRiskColor(analysis.risk_level)}`,
+                            background: `${(isEmptyWallet ? '#64748b' : getRiskColor(analysis.risk_level))}20`,
+                            color: isEmptyWallet ? '#64748b' : getRiskColor(analysis.risk_level),
+                            border: `1px solid ${isEmptyWallet ? '#64748b' : getRiskColor(analysis.risk_level)}`,
                             fontWeight: 600,
                             fontSize: '0.85rem',
                             py: 2,
                             fontFamily: '"Inter", "Roboto", sans-serif'
                           }}
                         />
-                        <Button
-                          variant="outlined"
-                          onClick={() => setShowCharts(!showCharts)}
-                          sx={{
-                            borderRadius: '10px',
-                            textTransform: 'none',
-                            fontWeight: 600
-                          }}
-                        >
-                          {showCharts ? 'Hide Charts' : 'Show Charts'}
-                        </Button>
+                        {!isEmptyWallet && (
+                          <Button
+                            variant="outlined"
+                            onClick={() => setShowCharts(!showCharts)}
+                            sx={{
+                              borderRadius: '10px',
+                              textTransform: 'none',
+                              fontWeight: 600
+                            }}
+                          >
+                            {showCharts ? 'Hide Charts' : 'Show Charts'}
+                          </Button>
+                        )}
                       </Box>
                     </Box>
                     
                     <Divider sx={{ mb: 4 }} />
 
-                    {showCharts && (
-                      <Box sx={{ mb: 4 }}>
-                        <WalletCredibilityChart
-                          address={analysis.address}
-                          defaultDays={90}
-                          defaultGranularity="day"
-                          dark={isDarkMode}
-                        />
+                    {!isEmptyWallet && (
+                      <Box sx={{ 
+                        display: showCharts || generatingPdf ? 'block' : 'none',
+                        position: generatingPdf && !showCharts ? 'absolute' : 'relative',
+                        left: generatingPdf && !showCharts ? '-9999px' : 'auto',
+                        top: generatingPdf && !showCharts ? '0' : 'auto'
+                      }}>
+                        {(showCharts || generatingPdf) && (
+                        <>
+                          <Box sx={{ mb: 4 }} data-chart="balance-history">
+                            <WalletCredibilityChart
+                              address={analysis.address}
+                              defaultDays={90}
+                              defaultGranularity="day"
+                              dark={isDarkMode}
+                            />
+                          </Box>
+                          
+                          <Box sx={{ mb: 4 }} data-chart="inflow-outflow">
+                            <InflowOutflowChart
+                              address={analysis.address}
+                              defaultDays={90}
+                              defaultGranularity="week"
+                              dark={isDarkMode}
+                            />
+                          </Box>
+                        </>
+                      )}
                       </Box>
                     )}
                     
-                    {/* Risk Score Visualization */}
-                    <Box sx={{ mb: 4 }}>
-                      <Typography variant="h6" gutterBottom>
-                        Risk Score: {(analysis.risk_score * 100).toFixed(1)}%
-                      </Typography>
-                      <LinearProgress 
-                        variant="determinate" 
-                        value={analysis.risk_score * 100}
-                        sx={{ 
-                          height: 12,
-                          borderRadius: 2,
-                          background: 'rgba(0, 0, 0, 0.1)',
-                          '& .MuiLinearProgress-bar': {
-                            background: `linear-gradient(45deg, ${getRiskColor(analysis.risk_level)} 30%, ${getRiskColor(analysis.risk_level)}80 90%)`,
-                            borderRadius: 2
-                          }
-                        }}
-                      />
-                    </Box>
+                    {!isEmptyWallet && (
+                      <Box sx={{ mb: 4 }}>
+                        <Typography variant="h6" gutterBottom>
+                          Risk Score: {(analysis.risk_score * 100).toFixed(1)}%
+                        </Typography>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={analysis.risk_score * 100}
+                          sx={{ 
+                            height: 12,
+                            borderRadius: 2,
+                            background: 'rgba(0, 0, 0, 0.1)',
+                            '& .MuiLinearProgress-bar': {
+                              background: `linear-gradient(45deg, ${getRiskColor(analysis.risk_level)} 30%, ${getRiskColor(analysis.risk_level)}80 90%)`,
+                              borderRadius: 2
+                            }
+                          }}
+                        />
+                      </Box>
+                    )}
 
                     {/* Detailed Risk Analysis Explanation */}
                     <Box sx={{ mb: 4 }}>
@@ -934,9 +890,23 @@ const App: React.FC = () => {
                         background: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.9)',
                         border: isDarkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)',
                         borderRadius: '12px',
-                        borderLeft: `4px solid ${getRiskColor(analysis.risk_level)}`
+                        borderLeft: `4px solid ${isEmptyWallet ? '#94a3b8' : getRiskColor(analysis.risk_level)}`
                       }}>
-                        {(analysis.risk_level === 'MINIMAL' || analysis.risk_level === 'VERY_LOW') ? (
+                        {isEmptyWallet ? (
+                          <Alert
+                            severity="info"
+                            sx={{
+                              borderRadius: '12px',
+                              '& .MuiAlert-message': {
+                                fontFamily: '"Inter", "Roboto", sans-serif'
+                              }
+                            }}
+                          >
+                            <AlertTitle>No On-Chain Activity Detected</AlertTitle>
+                            This wallet has no recorded transactions. Risk models require on-chain activity, so all factors are marked as not available.
+                            Monitor the address for future activity or analyze another wallet for a comprehensive breakdown.
+                          </Alert>
+                        ) : (analysis.risk_level === 'MINIMAL' || analysis.risk_level === 'VERY_LOW') ? (
                           <Box>
                             <Typography variant="h6" sx={{ color: '#059669', mb: 2, fontWeight: 600 }}>
                               Legitimate Address Indicators
@@ -1074,33 +1044,36 @@ const App: React.FC = () => {
                             </List>
                           </Box>
                         )}
-                        
-                        <Divider sx={{ my: 2 }} />
-                        
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                            Confidence Level: {(analysis.confidence * 100).toFixed(1)}%
-                          </Typography>
-                          <Chip 
-                            size="small" 
-                            label={
-                              analysis.confidence > 0.8 
-                                ? 'High Confidence' 
-                                : analysis.confidence > 0.5 
-                                  ? 'Medium Confidence' 
-                                  : 'Low Confidence'
-                            }
-                            color={
-                              analysis.confidence > 0.8 
-                                ? 'success' 
-                                : analysis.confidence > 0.5 
-                                  ? 'warning' 
-                                  : 'error'
-                            }
-                            variant="outlined"
-                          />
-                        </Box>
-                        
+
+                        {!isEmptyWallet && (
+                          <>
+                            <Divider sx={{ my: 2 }} />
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                Confidence Level: {(analysis.confidence * 100).toFixed(1)}%
+                              </Typography>
+                              <Chip 
+                                size="small" 
+                                label={
+                                  analysis.confidence > 0.8 
+                                    ? 'High Confidence' 
+                                    : analysis.confidence > 0.5 
+                                      ? 'Medium Confidence' 
+                                      : 'Low Confidence'
+                                }
+                                color={
+                                  analysis.confidence > 0.8 
+                                    ? 'success' 
+                                    : analysis.confidence > 0.5 
+                                      ? 'warning' 
+                                      : 'error'
+                                }
+                                variant="outlined"
+                              />
+                            </Box>
+                          </>
+                        )}
+
                         {/* Data Limitations Warning */}
                         {analysis.data_limitations && (
                           <Alert 
@@ -1130,7 +1103,35 @@ const App: React.FC = () => {
                         <Box sx={{ display: 'flex', gap: 2, mt: 3, justifyContent: 'center' }}>
                           <Button
                             variant="contained"
-                            onClick={() => downloadPdfReportWithCharts(analysis, address)}
+                            disabled={generatingPdf || isEmptyWallet}
+                            onClick={async () => {
+                              if (isEmptyWallet) {
+                                return;
+                              }
+                              const chartsWereHidden = !showCharts;
+                              setGeneratingPdf(true);
+
+                              try {
+                                // Temporarily show charts for PDF capture
+                                if (chartsWereHidden) {
+                                  setShowCharts(true);
+                                  // Wait 5 seconds for charts to fully load and render with data
+                                  await new Promise(resolve => setTimeout(resolve, 5000));
+                                } else {
+                                  // Even if charts are visible, wait to ensure they're fully rendered
+                                  await new Promise(resolve => setTimeout(resolve, 2000));
+                                }
+
+                                await downloadPdfReportWithCharts(analysis, address);
+                              } finally {
+                                // Always hide charts after PDF generation if they were hidden before
+                                if (chartsWereHidden) {
+                                  // Immediate hide after PDF generation
+                                  setShowCharts(false);
+                                }
+                                setGeneratingPdf(false);
+                              }
+                            }}
                             sx={{
                               background: 'linear-gradient(45deg, #2563eb 0%, #0891b2 50%, #06b6d4 100%)',
                               borderRadius: '12px',
@@ -1145,7 +1146,7 @@ const App: React.FC = () => {
                             }}
                           >
                             <PictureAsPdfIcon sx={{ mr: 1 }} />
-                            Download PDF Report
+                            {generatingPdf ? 'Generating PDF...' : 'Download PDF Report'}
                           </Button>
                         </Box>
                       </Paper>
@@ -1160,9 +1161,9 @@ const App: React.FC = () => {
                     }}>
                       {[
                         { label: 'Address', value: `${analysis.address.substring(0, 12)}...${analysis.address.slice(-8)}`, icon: 'location_on', gradient: 'linear-gradient(45deg, #2563eb, #0891b2)' },
-                        { label: 'Confidence', value: `${(analysis.confidence * 100).toFixed(1)}%`, icon: 'verified', gradient: 'linear-gradient(45deg, #059669, #10b981)' },
-                        { label: 'Transactions', value: analysis.analysis_summary.transaction_count.toLocaleString(), icon: 'trending_up', gradient: 'linear-gradient(45deg, #dc2626, #ef4444)' },
-                        { label: 'Balance', value: `${analysis.analysis_summary.current_balance_btc.toFixed(8)} BTC`, icon: 'account_balance_wallet', gradient: 'linear-gradient(45deg, #7c3aed, #a855f7)' }
+                        { label: 'Confidence', value: isEmptyWallet ? 'N/A' : `${(analysis.confidence * 100).toFixed(1)}%`, icon: 'verified', gradient: 'linear-gradient(45deg, #059669, #10b981)' },
+                        { label: 'Transactions', value: isEmptyWallet ? 'N/A' : analysis.analysis_summary.transaction_count.toLocaleString(), icon: 'trending_up', gradient: 'linear-gradient(45deg, #dc2626, #ef4444)' },
+                        { label: 'Balance', value: isEmptyWallet ? 'N/A' : `${analysis.analysis_summary.current_balance_btc.toFixed(8)} BTC`, icon: 'account_balance_wallet', gradient: 'linear-gradient(45deg, #7c3aed, #a855f7)' }
                       ].map((metric, index) => (
                         <Paper
                           key={index}

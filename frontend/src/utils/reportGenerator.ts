@@ -185,11 +185,11 @@ const drawMetricCard = (
   doc.setFillColor(Math.max(0, color[0] - 20), Math.max(0, color[1] - 20), Math.max(0, color[2] - 20));
   doc.roundedRect(x, y + height - 3, 6, 3, 0, 0, 'F');
 
-  // Label with improved typography
+  // Label with improved typography (bigger heading)
   doc.setTextColor(...REPORT_COLORS.muted);
-  doc.setFontSize(7);
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text(label.toUpperCase(), x + 10, y + 8);
+  doc.text(label.toUpperCase(), x + 10, y + 10);
 
   // Value with enhanced styling
   doc.setTextColor(...REPORT_COLORS.dark);
@@ -220,9 +220,9 @@ const drawSectionHeader = (doc: jsPDF, title: string, y: number): number => {
     adjustedY = headerHeight + 20; // Move down
   }
 
-  // Section title with enhanced styling
+  // Section title with enhanced styling - LARGER
   doc.setTextColor(...REPORT_COLORS.primary);
-  doc.setFontSize(16);
+  doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
   doc.text(title, margin, adjustedY + 3);
 
@@ -250,6 +250,52 @@ const formatBitcoinAddress = (address: string, maxLength: number = 40): string =
 };
 
 /**
+ * Normalize an array of mixed values to a unique list of trimmed strings
+ */
+export const normalizeTextArray = (values: unknown[]): string[] => {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => {
+          if (typeof value === 'string') return value.trim();
+          if (value == null) return '';
+          return String(value).trim();
+        })
+        .filter((value) => value.length > 0)
+    )
+  );
+};
+
+/**
+ * Extract risk factors from the analysis response, falling back to detailed analysis when needed
+ */
+export const extractRiskFactors = (analysis: AnalysisResponse): string[] => {
+  const directFactors = Array.isArray(analysis.risk_factors) ? analysis.risk_factors : [];
+  const predictorFactors = Array.isArray(analysis.detailed_analysis?.ml_prediction?.risk_factors)
+    ? analysis.detailed_analysis?.ml_prediction?.risk_factors
+    : [];
+  const fraudSignalFlags = Array.isArray(
+    (analysis as any)?.detailed_analysis?.blockchain_analysis?.fraud_signals?.detailed_flags
+  )
+    ? (analysis as any)?.detailed_analysis?.blockchain_analysis?.fraud_signals?.detailed_flags
+    : [];
+
+  return normalizeTextArray([...directFactors, ...predictorFactors, ...fraudSignalFlags]);
+};
+
+/**
+ * Extract positive indicators from both primary and detailed analysis payloads
+ */
+export const extractPositiveIndicators = (analysis: AnalysisResponse): string[] => {
+  const directIndicators = Array.isArray(analysis.positive_indicators) ? analysis.positive_indicators : [];
+  const predictorIndicators = Array.isArray(analysis.detailed_analysis?.ml_prediction?.positive_indicators)
+    ? analysis.detailed_analysis?.ml_prediction?.positive_indicators
+    : [];
+
+  return normalizeTextArray([...directIndicators, ...predictorIndicators]);
+};
+
+/**
  * Draw wallet address section with proper formatting and professional spacing
  */
 const drawWalletAddressSection = (doc: jsPDF, address: string, label: string, currentY: number): number => {
@@ -261,9 +307,9 @@ const drawWalletAddressSection = (doc: jsPDF, address: string, label: string, cu
   doc.setLineWidth(0.5);
   doc.roundedRect(margin, currentY, pageWidth - margin * 2, 18, 4, 4, 'FD');
 
-  // Label with professional typography
+  // Label with professional typography - LARGER
   doc.setTextColor(...REPORT_COLORS.primary);
-  doc.setFontSize(12);
+  doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.text(label, margin + 6, currentY + 12);
 
@@ -321,7 +367,7 @@ export const downloadExcelReport = (analysis: AnalysisResponse, address: string)
   const summaryData = [
     ['BitScan Analysis Report'],
     [''],
-    ['Subject Wallet Address', formatBitcoinAddress(address, 60)],
+    ['Wallet Address', formatBitcoinAddress(address, 60)],
     ['Risk Score', `${(analysis.risk_score * 100).toFixed(2)}%`],
     ['Risk Level', analysis.risk_level],
     ['Confidence', `${(analysis.confidence * 100).toFixed(2)}%`],
@@ -339,20 +385,30 @@ export const downloadExcelReport = (analysis: AnalysisResponse, address: string)
   utils.book_append_sheet(wb, wsSummary, 'Summary');
 
   // Risk factors data
-  if (analysis.risk_factors && analysis.risk_factors.length > 0) {
+  const riskFactors = extractRiskFactors(analysis).filter(
+  (factor) =>
+    factor &&
+    !factor.toLowerCase().includes('fast analysis') &&
+    !factor.toLowerCase().includes('limited data available') &&
+    !factor.toLowerCase().includes('minor deviations detected')
+);
+
+  if (riskFactors.length > 0) {
     const riskFactorsData = [
       ['Risk Factors'],
-      ...analysis.risk_factors.map((factor, index) => [`${index + 1}. ${factor}`])
+      ...riskFactors.map((factor: string, index: number) => [`${index + 1}. ${factor}`])
     ];
     const wsRiskFactors = utils.aoa_to_sheet(riskFactorsData);
     utils.book_append_sheet(wb, wsRiskFactors, 'Risk Factors');
   }
 
   // Positive indicators data
-  if (analysis.positive_indicators && analysis.positive_indicators.length > 0) {
+  const positiveIndicators = extractPositiveIndicators(analysis);
+
+  if (positiveIndicators.length > 0) {
     const positiveIndicatorsData = [
       ['Positive Indicators'],
-      ...analysis.positive_indicators.map((indicator, index) => [`${index + 1}. ${indicator}`])
+      ...positiveIndicators.map((indicator: string, index: number) => [`${index + 1}. ${indicator}`])
     ];
     const wsPositiveIndicators = utils.aoa_to_sheet(positiveIndicatorsData);
     utils.book_append_sheet(wb, wsPositiveIndicators, 'Positive Indicators');
@@ -433,7 +489,15 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
   currentY += cardHeight + 15;
 
   // Risk Intelligence Section
-  if (analysis.risk_factors && analysis.risk_factors.length > 0) {
+  const riskFactors = extractRiskFactors(analysis).filter(
+  (factor) =>
+    factor &&
+    !factor.toLowerCase().includes('fast analysis') &&
+    !factor.toLowerCase().includes('limited data available') &&
+    !factor.toLowerCase().includes('minor deviations detected')
+);
+
+  if (riskFactors.length > 0) {
     currentY = drawSectionHeader(doc, 'Risk Intelligence Assessment', currentY);
 
     // Add descriptive text with better spacing
@@ -443,7 +507,7 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
     doc.text('The following risk factors were identified during the comprehensive blockchain analysis:', LAYOUT.margin, currentY + 6);
     currentY += 14;
 
-    const riskTableData = analysis.risk_factors.map((factor, index) => [
+    const riskTableData = riskFactors.map((factor, index) => [
       `${index + 1}`,
       factor
     ]);
@@ -453,24 +517,24 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
       head: [['#', 'Identified Risk Factor']],
       body: riskTableData,
       margin: { left: LAYOUT.margin, right: LAYOUT.margin },
-      theme: 'plain',
+      theme: 'striped',
       styles: {
         fontSize: 10,
         cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
         textColor: REPORT_COLORS.dark,
-        lineWidth: 0.1,
-        lineColor: [226, 232, 240]
       },
       headStyles: {
         fillColor: REPORT_COLORS.primary,
         textColor: REPORT_COLORS.white,
         fontStyle: 'bold',
         halign: 'left',
-        fontSize: 10
+        fontSize: 11
       },
       alternateRowStyles: {
         fillColor: REPORT_COLORS.light
-      }
+      },
+      tableLineColor: [226, 232, 240],
+      tableLineWidth: 0.3
     });
 
     currentY = ((doc as any).lastAutoTable?.finalY ?? currentY) + 15;
@@ -484,7 +548,9 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
   }
 
   // Positive Indicators Section
-  if (analysis.positive_indicators && analysis.positive_indicators.length > 0) {
+  const positiveIndicators = extractPositiveIndicators(analysis);
+
+  if (positiveIndicators.length > 0) {
     currentY = drawSectionHeader(doc, 'Mitigating Factors', currentY);
 
     // Add descriptive text
@@ -494,7 +560,7 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
     doc.text('The following positive indicators were identified that may reduce overall risk:', LAYOUT.margin, currentY + 6);
     currentY += 12;
 
-    const positiveTableData = analysis.positive_indicators.map((indicator, index) => [
+    const positiveTableData = positiveIndicators.map((indicator: string, index: number) => [
       `${index + 1}`,
       indicator
     ]);
@@ -585,7 +651,7 @@ export const downloadPdfReportWithCharts = async (analysis: AnalysisResponse, ad
   let currentY = await drawProfessionalHeader(doc, 'Blockchain Security Intelligence', 'Advanced Risk Assessment Report');
 
   // Address information section
-  currentY = drawWalletAddressSection(doc, address, 'SUBJECT WALLET ADDRESS:', currentY);
+  currentY = drawWalletAddressSection(doc, address, 'WALLET ADDRESS:', currentY);
 
   // Add professional spacing before summary section
   currentY += 10;
@@ -647,8 +713,15 @@ export const downloadPdfReportWithCharts = async (analysis: AnalysisResponse, ad
 
   // Risk Intelligence Section - Always include this section
   currentY = drawSectionHeader(doc, 'Risk Intelligence Assessment', currentY);
+  const riskFactors = extractRiskFactors(analysis).filter(
+  (factor) =>
+    factor &&
+    !factor.toLowerCase().includes('fast analysis') &&
+    !factor.toLowerCase().includes('limited data available') &&
+    !factor.toLowerCase().includes('minor deviations detected')
+);
 
-  if (analysis.risk_factors && analysis.risk_factors.length > 0) {
+  if (riskFactors.length > 0) {
     // Add descriptive text for risk factors
     doc.setFontSize(10);
     doc.setTextColor(...REPORT_COLORS.muted);
@@ -656,7 +729,7 @@ export const downloadPdfReportWithCharts = async (analysis: AnalysisResponse, ad
     doc.text('The following risk factors were identified during the comprehensive blockchain analysis:', LAYOUT.margin, currentY + 6);
     currentY += 12;
 
-    const riskTableData = analysis.risk_factors.map((factor, index) => [
+    const riskTableData = riskFactors.map((factor, index) => [
       `${index + 1}`,
       factor
     ]);
@@ -667,6 +740,7 @@ export const downloadPdfReportWithCharts = async (analysis: AnalysisResponse, ad
       body: riskTableData,
       margin: { left: LAYOUT.margin, right: LAYOUT.margin },
       theme: 'plain',
+      showHead: 'firstPage',
       styles: {
         fontSize: 10,
         cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
@@ -688,16 +762,29 @@ export const downloadPdfReportWithCharts = async (analysis: AnalysisResponse, ad
 
     currentY = ((doc as any).lastAutoTable?.finalY ?? currentY) + 15;
   } else {
-    // No risk factors found - show positive message
-    doc.setFontSize(10);
+    // No risk factors found - show positive message with better formatting
+    doc.setFillColor(240, 253, 244); // Light green background
+    doc.setDrawColor(34, 197, 94); // Green border
+    doc.setLineWidth(0.5);
+    doc.roundedRect(LAYOUT.margin, currentY, LAYOUT.pageWidth - LAYOUT.margin * 2, 20, 3, 3, 'FD');
+    
+    doc.setFontSize(11);
     doc.setTextColor(...REPORT_COLORS.success);
+    doc.setFont('helvetica', 'bold');
+    doc.text('✓ No Significant Risk Factors Identified', LAYOUT.margin + 5, currentY + 8);
+    
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text('✓ No significant risk factors were identified during the comprehensive analysis.', LAYOUT.margin, currentY + 6);
-    currentY += 20;
+    doc.setTextColor(...REPORT_COLORS.muted);
+    doc.text('Comprehensive blockchain analysis found no major security concerns with this wallet.', LAYOUT.margin + 5, currentY + 15);
+    
+    currentY += 25;
   }
 
   // Mitigating Factors Section
-  if (analysis.positive_indicators && analysis.positive_indicators.length > 0) {
+  const positiveIndicators = extractPositiveIndicators(analysis);
+
+  if (positiveIndicators.length > 0) {
     // Check for page break before Mitigating Factors
     if (currentY > 230) {
       doc.addPage();
@@ -712,7 +799,7 @@ export const downloadPdfReportWithCharts = async (analysis: AnalysisResponse, ad
     doc.text('The following positive indicators were identified that may reduce overall risk:', LAYOUT.margin, currentY + 6);
     currentY += 12;
 
-    const positiveTableData = analysis.positive_indicators.map((indicator, index) => [
+    const positiveTableData = positiveIndicators.map((indicator, index) => [
       `${index + 1}`,
       indicator
     ]);
@@ -834,6 +921,63 @@ export const downloadPdfReportWithCharts = async (analysis: AnalysisResponse, ad
   });
 
   currentY += recommendations.length * 5 + 20;
+
+  // Add Charts Section
+  try {
+    const html2canvas = (await import('html2canvas')).default;
+    
+    // Check if charts exist before adding page
+    const balanceChart = document.querySelector('[data-chart="balance-history"]');
+    const inflowChart = document.querySelector('[data-chart="inflow-outflow"]');
+    
+    if (!balanceChart && !inflowChart) {
+      console.warn('Charts not visible - skipping chart section in PDF');
+    } else {
+      // Add new page for charts
+      doc.addPage();
+      currentY = LAYOUT.margin;
+      
+      currentY = drawSectionHeader(doc, 'Transaction Flow Analysis', currentY);
+      
+      // Capture Balance History Chart
+      if (balanceChart) {
+        const canvas = await html2canvas(balanceChart as HTMLElement, { 
+          scale: 2,
+          backgroundColor: '#ffffff'
+        });
+        const imgData = canvas.toDataURL('image/png');
+        const imgWidth = LAYOUT.pageWidth - LAYOUT.margin * 2;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        doc.addImage(imgData, 'PNG', LAYOUT.margin, currentY, imgWidth, Math.min(imgHeight, 80));
+        currentY += Math.min(imgHeight, 80) + 15;
+      }
+      
+      // Check if we need a new page for the second chart
+      if (currentY > 200) {
+        doc.addPage();
+        currentY = LAYOUT.margin;
+      }
+      
+      currentY = drawSectionHeader(doc, 'Inflow vs Outflow Analysis', currentY);
+      
+      // Capture Inflow/Outflow Chart
+      if (inflowChart) {
+        const canvas = await html2canvas(inflowChart as HTMLElement, { 
+          scale: 2,
+          backgroundColor: '#ffffff'
+        });
+        const imgData = canvas.toDataURL('image/png');
+        const imgWidth = LAYOUT.pageWidth - LAYOUT.margin * 2;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        doc.addImage(imgData, 'PNG', LAYOUT.margin, currentY, imgWidth, Math.min(imgHeight, 70));
+        currentY += Math.min(imgHeight, 70) + 10;
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to capture charts:', error);
+  }
 
   // Add footer to all pages
   const totalPages = doc.getNumberOfPages();

@@ -30,6 +30,8 @@ apiClient.interceptors.response.use(
       throw new Error('Rate limit exceeded. Please wait a few minutes before trying again.');
     } else if (error.response?.status === 400) {
       throw new Error('Invalid Bitcoin address format. Please check the address and try again.');
+    } else if (error.response?.status === 504) {
+      throw new Error('Analysis timeout. The address may have high activity. Please try again later.');
     } else if (error.response?.status === 500) {
       throw new Error('Internal server error. Please try again later.');
     } else if (error.code === 'ECONNABORTED') {
@@ -53,11 +55,11 @@ export class BitScanAPI {
     includeDetailed: boolean = true
   ): Promise<AnalysisResponse> {
     try {
-      // Use fast endpoint in production to avoid Vercel timeouts
-      const endpoint = isProduction ? `/analyze-fast/${address}` : `/analyze/${address}`;
+      // Use full analysis endpoint for comprehensive risk factors
+      const endpoint = `/analyze/${address}`;
 
       const response = await apiClient.get<AnalysisResponse>(
-        `${endpoint}?include_detailed=${includeDetailed}`
+        `${endpoint}?depth=2&include_detailed=${includeDetailed}`
       );
       return response.data;
     } catch (error) {

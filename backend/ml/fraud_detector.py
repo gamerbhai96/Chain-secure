@@ -1147,7 +1147,7 @@ class FraudDetector:
                     'fraud_probability': float(base_empty_risk),
                     'is_fraud_predicted': False,
                     'model_used': 'entropy_based_empty',
-                    'confidence': 0.95,
+                    'confidence': 0.3,
                     'risk_level': self._get_enhanced_risk_level(base_empty_risk),
                     'reasoning': f'Empty address with entropy-based risk variation ({base_empty_risk:.2%})',
                     'data_quality_score': 0.1,
@@ -1263,16 +1263,16 @@ class FraudDetector:
                     'address': address,
                     'fraud_probability': 0.01,
                     'risk_level': 'VERY_LOW',
-                    'confidence': 0.95,
+                    'confidence': 0.3,
                     'model_predictions': {},
                     'reasoning': f'{reason} - known legitimate',
                     'model_version': 'v1.0',
                     'features_used': 0,
                     'risk_factors': [],  # No risk factors for legitimate addresses
                     'positive_indicators': [
-                        'Recognized legitimate wallet address',
-                        'No suspicious activity patterns detected',
-                        'Well-established in blockchain history'
+                        'Address in known database',
+                        'Limited pattern detection',
+                        'Historical address detected'
                     ],
                     'timestamp': datetime.now().isoformat()
                 }
@@ -1322,7 +1322,7 @@ class FraudDetector:
                         'address': address,
                         'fraud_probability': float(fraud_probability),
                         'risk_level': risk_level,
-                        'confidence': 0.90,
+                        'confidence': 0.3,
                         'model_predictions': {'kaggle_model': float(fraud_probability)},
                         'reasoning': f'Real dataset trained model (64.5K samples): {risk_level} risk ({fraud_probability:.3f} probability)',
                         'model_version': 'real_dataset_v1.0',
@@ -1378,7 +1378,7 @@ class FraudDetector:
             
             # Calculate confidence based on model agreement
             std_dev = np.std(list(probabilities.values()))
-            confidence = max(0.7, 1.0 - std_dev)  # Higher agreement = higher confidence
+            confidence = max(0.3, 1.0 - std_dev)  # Higher agreement = higher confidence
             
             # Generate risk factors and positive indicators
             risk_factors, positive_indicators = self._generate_risk_factors_and_indicators(
@@ -1418,9 +1418,9 @@ class FraudDetector:
         # For very low risk addresses, focus on positive indicators
         if risk_level in ['VERY_LOW', 'MINIMAL']:
             positive_indicators.extend([
-                'Normal transaction patterns observed',
-                'No suspicious activity detected',
-                'Consistent with legitimate wallet behavior'
+                'Limited data analysis - low confidence',
+                'Insufficient data for full analysis',
+                'Basic pattern analysis only'
             ])
             
             # Add specific positive indicators based on metrics
@@ -2028,7 +2028,7 @@ class FraudDetector:
         elif probability > 0.2:
             return "Some minor risk factors identified"
         else:
-            return "Normal transaction patterns observed"
+            return "Limited data - basic analysis only"
     
     def _enhanced_ensemble_prediction(self, features: np.ndarray, address: str, analysis_data: Dict) -> Dict[str, Any]:
         """Enhanced ensemble prediction with better intelligence"""

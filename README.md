@@ -1,102 +1,100 @@
 # BitScan - Bitcoin Scam Pattern Analyzer
 
-![BitScan Logo](https://img.shields.io/badge/BitScan-Bitcoin%20Fraud%20Detection-orange)
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-green)
-![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ## 🔍 Overview
 
-BitScan is an advanced Bitcoin scam pattern analyzer designed to detect fraudulent investment schemes through comprehensive blockchain analytics, machine learning, and pattern recognition. The system helps protect users from crypto investment fraud by analyzing transaction flows, identifying suspicious wallet behaviors, and providing real-time risk assessments.
+BitScan is a full-stack Bitcoin scam intelligence platform combining FastAPI microservices with a modern React analyst dashboard. The system ingests on-chain data, applies ensemble machine-learning models, and surfaces real-time risk signals so compliance teams can investigate wallets, export evidence packs, and share findings within minutes.
 
 ## 🚀 Key Features
 
-- **🧠 AI-Powered Fraud Detection**: Machine learning models trained on known scam patterns
-- **📊 Blockchain Analytics**: Deep transaction flow analysis and graph visualization
-- **⚡ Real-time Risk Scoring**: Instant risk assessment for Bitcoin addresses
-- **🌐 Public API**: RESTful API for integration with exchanges and DeFi platforms
-- **🔗 Data Enrichment**: Integration with scam databases and community reports
-- **📈 Network Analysis**: Graph analytics to visualize suspicious wallet activity
-- **🛡️ Pattern Recognition**: Detection of mixing services, rapid fund movement, and cluster analysis
+- **🧠 Ensemble ML Detector**: Gradient boosting, neural networks, and anomaly models tuned for crypto scam signatures
+- **⚡ Fast Analysis API**: Production-ready `/analyze-fast` endpoint with rate-limit awareness and graceful fallbacks
+- **📊 Analyst Dashboard**: React + Material UI experience with risk cards, history, FAQ, and interactive charts
+- **📈 Evidence Generation**: One-click PDF and XLSX reports including risk factors, limitations, timeline visuals
+- **🔗 Blockchain Enrichment**: BlockCypher integration, fraud databases, and network topology insights
+- **🛡️ Risk Stratification**: Seven-tier risk levels (`VERY_LOW` → `CRITICAL`) with confidence scoring and indicators
 
 ## 🛠️ Technology Stack
 
-- **Backend**: FastAPI, Python 3.8+
-- **Machine Learning**: scikit-learn, XGBoost, imbalanced-learn
-- **Blockchain Data**: BlockCypher API integration
-- **Graph Analytics**: NetworkX, igraph
-- **Database**: SQLite (easily upgradeable to PostgreSQL)
-- **Visualization**: Plotly, Dash, Cytoscape
-- **Deployment**: Docker, Uvicorn
+- **Backend & Services**: FastAPI, Uvicorn, Python 3.10+, asyncio
+- **Machine Learning**: scikit-learn, XGBoost, LightGBM, imbalanced-learn, custom ensemble logic
+- **Blockchain & Data**: BlockCypher API, pandas, numpy, caching utilities
+- **Frontend**: React 19, Vite, Material UI, React Query, Recharts, jsPDF, XLSX
+- **Visualization & Reporting**: Recharts components, custom PDF/Excel generators, html2canvas
+- **Tooling**: TypeScript, ESLint, python-dotenv
 
 ## 📁 Project Structure
 
 ```
 bitscan/
-├── src/bitscan/
-│   ├── api/                 # FastAPI routes and endpoints
-│   ├── blockchain/          # Blockchain analysis engine
-│   ├── data/               # Data collection and enrichment
-│   │   ├── blockcypher_client.py    # BlockCypher API client
-│   │   └── elliptic_dataset.py      # EllipticPlusPlus dataset loader
-│   ├── ml/                 # Machine learning models
-│   │   ├── fraud_detector.py        # Enhanced fraud detection
-│   │   └── feature_extraction.py   # Feature engineering
-│   ├── utils/              # Utility functions
-│   └── visualization/      # Graph visualization components
-├── web/static/             # Frontend assets (CSS, JS)
-├── data/                   # Data storage
-│   ├── models/             # Trained ML models
-│   └── elliptic_dataset/   # EllipticPlusPlus dataset (after download)
-├── main.py                 # FastAPI application entry point
-├── requirements.txt        # Python dependencies
-├── .env.example           # Environment configuration template
-└── README.md              # This file
+├── backend/
+│   ├── api/                # FastAPI routers, health, analysis endpoints
+│   ├── blockchain/         # Blockchain analyzer and client orchestration
+│   ├── data/               # External API clients, cached datasets, trained models/
+│   ├── ml/                 # Enhanced fraud detectors, feature extraction
+│   ├── utils/              # Helpers for scoring, caching, validation
+│   └── main.py             # FastAPI application entry point
+├── frontend/
+│   ├── src/
+│   │   ├── components/     # SecureTraceNav, charts, modals, layout
+│   │   ├── services/       # Axios API client configuration
+│   │   ├── utils/          # Report generators and helpers
+│   │   └── App.tsx         # SPA root with routing & theme switcher
+│   ├── index.html          # Vite entry point
+│   ├── package.json        # Frontend dependencies & scripts
+│   └── vite.config.ts
+├── datasets/               # Optional training datasets (external download)
+├── data/                   # Persisted models, cache, exports (gitignored)
+├── .env.example            # Backend environment template
+└── README.md               # Project documentation
 ```
 
 ## 🚦 Quick Start
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.10 or higher
+- Node.js 18+ and npm (or pnpm)
 - Git
-- Optional: BlockCypher API token for enhanced data collection
+- Optional BlockCypher API token for higher rate limits
 
-### Installation
+### 1. Clone the repository
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/bitscan/bitscan.git
-   cd bitscan
-   ```
+```bash
+git clone https://github.com/bitscan/bitscan.git
+cd bitscan
+```
 
-2. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+### 2. Backend setup (FastAPI)
 
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate      # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+# Windows (PowerShell)
+copy ..\.env.example .env    # update credentials and thresholds
+# macOS/Linux
+# cp ../.env.example .env
+uvicorn main:app --reload
+```
 
-4. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+Run these commands from the repository root. The backend hosts REST endpoints at `http://localhost:8000/api/v1` with interactive docs at `http://localhost:8000/docs`.
 
-5. **Run the application**
-   ```bash
-   python main.py
-   ```
+### 3. Frontend setup (React dashboard)
 
-The API will be available at `http://localhost:8000` with interactive documentation at `http://localhost:8000/docs`.
+```bash
+cd ../frontend
+npm install
+echo VITE_API_URL=http://localhost:8000/api/v1 > .env
+npm run dev
+```
+
+Visit the analyst dashboard at `http://localhost:5173` (Vite will print the exact URL). The SPA talks to FastAPI via `VITE_API_URL`; add additional keys to `frontend/.env` as needed.
 
 ## 🔧 Configuration
 
-Create a `.env` file with the following configuration:
+### Backend `.env`
 
 ```env
 # BlockCypher API (optional but recommended)
@@ -106,70 +104,104 @@ BLOCKCYPHER_API_TOKEN=your_api_token_here
 FASTAPI_SECRET_KEY=your_secret_key_here
 DATABASE_URL=sqlite:///bitscan.db
 
-# ML Model settings
+# ML Model tuning
 MODEL_THRESHOLD=0.5
+RISK_SCORE_WEIGHTS_HIGH=0.8
+RISK_SCORE_WEIGHTS_MEDIUM=0.5
+RISK_SCORE_WEIGHTS_LOW=0.2
+
+# Blockchain settings
+BITCOIN_NETWORK=main
+MAX_TRANSACTION_DEPTH=5
+MAX_WALLET_ANALYSIS_COUNT=1000
+```
+
+### Frontend `.env`
+
+```env
+# API base used by the React SPA
+VITE_API_URL=http://localhost:8000/api/v1
+
+# Optional feature flags
+VITE_ENABLE_FAQ=true
 ```
 
 ## 📖 API Usage
 
-### Analyze a Bitcoin Address
+All endpoints are prefixed with `/api/v1`.
 
-```bash
-curl -X GET "http://localhost:8000/api/v1/analyze/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
-```
+- **Comprehensive analysis (UI default for richer risk factors)**
+  ```bash
+  curl "http://localhost:8000/api/v1/analyze/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa?depth=2&include_detailed=true"
+  ```
 
-Response:
+- **Fast analysis (limited data, lower latency)**
+  ```bash
+  curl "http://localhost:8000/api/v1/analyze-fast/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+  ```
+  Note: Fast mode may return placeholder flags (e.g., "Fast analysis - limited data available"). The UI uses the comprehensive endpoint for more informative risk factors.
+
+- **Wallet time-series for charts**
+  ```bash
+  curl "http://localhost:8000/api/v1/wallet/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa/timeseries?days=90&granularity=day"
+  ```
+
+- **Batch risk evaluation**
+  ```bash
+  curl -X POST "http://localhost:8000/api/v1/batch" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "addresses": ["address1", "address2", "address3"],
+      "depth": 1,
+      "include_detailed": false
+    }'
+  ```
+
+- **Health and rate-limit status**
+  ```bash
+  curl "http://localhost:8000/api/v1/health"
+  curl "http://localhost:8000/api/v1/rate-limit-status"
+  ```
+
+Sample response snippet:
+
 ```json
 {
   "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
-  "risk_score": 0.1,
-  "risk_level": "LOW",
-  "is_flagged": false,
-  "confidence": 0.95,
+  "risk_score": 0.12,
+  "risk_level": "MINIMAL",
+  "confidence": 0.94,
+  "risk_factors": [],
+  "positive_indicators": ["Address in known database"],
   "analysis_summary": {
-    "transaction_count": 1234,
+    "transaction_count": 3736,
     "total_received_btc": 68.12,
-    "risk_indicators": 2
-  }
+    "current_balance_btc": 0.0
+  },
+  "timestamp": "2025-01-06T08:45:17.123456"
 }
 ```
 
-### Batch Analysis
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/batch" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "addresses": ["address1", "address2", "address3"],
-    "depth": 2
-  }'
-```
-
-### Transaction Graph
-
-```bash
-curl -X GET "http://localhost:8000/api/v1/graph/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa?depth=2"
-```
+See `backend/api/routes.py` for complete request/response schemas and explore the live OpenAPI docs at `http://localhost:8000/docs`.
 
 ## 🤖 Machine Learning Models
 
-BitScan employs multiple ML models for fraud detection:
+The enhanced ensemble in `backend/ml/enhanced_fraud_detector.py` blends:
 
-1. **Random Forest**: Feature importance and interpretability
-2. **XGBoost**: High-performance gradient boosting
-3. **Logistic Regression**: Fast and interpretable baseline
-4. **Isolation Forest**: Unsupervised anomaly detection
-5. **Ensemble Model**: Combines predictions from multiple models
+- RandomForest, GradientBoosting, ExtraTrees, LightGBM, XGBoost
+- MLP neural network for complex behavior detection
+- IsolationForest anomaly scoring with sigmoid calibration
+
+Key capabilities:
+
+- **Dynamic weighting**: Confidence-aware blending of model probabilities
+- **Fraud pattern registry**: Ransomware, mixer, ponzi, exit scam heuristics
+- **Risk thresholds**: `VERY_LOW`, `MINIMAL`, `LOW`, `MEDIUM`, `ELEVATED`, `HIGH`, `CRITICAL`
+- **Fallback logic**: Deterministic scoring for empty wallets or API timeouts
 
 ### Feature Engineering
 
-The system extracts 40+ features including:
-
-- Transaction patterns (velocity, frequency, amounts)
-- Network topology (centrality measures, clustering)
-- Temporal patterns (burst detection, regularity)
-- Flow concentration (Gini coefficients, fan-out ratios)
-- Behavioral indicators (mixing patterns, rapid movements)
+Exactly 20 normalized features covering transaction counts, ratios, address entropy, temporal signals, and derived fraud indicators (see `_extract_features`).
 
 ## 🔍 Fraud Detection Techniques
 
@@ -181,88 +213,27 @@ The system extracts 40+ features including:
 - **Cluster Analysis**: Groups related addresses under common control
 - **Round Amount Detection**: Identifies suspiciously round transaction amounts
 
-### Risk Indicators
-
-- **High Velocity**: Frequent large transactions
-- **Low Retention**: Minimal balance retention
-- **Network Centrality**: High betweenness in transaction graphs
-- **Temporal Clustering**: Burst activity patterns
-- **Address Reuse**: Patterns suggesting automation
-
-## 📊 Visualization
-
-BitScan provides interactive visualizations:
-
-- **Transaction Graphs**: Network visualization of address relationships
-- **Risk Heat Maps**: Geographic and temporal risk distribution
-- **Feature Importance**: ML model interpretability charts
-- **Timeline Analysis**: Transaction patterns over time
-
-## 🛡️ Security Considerations
-
-- **Rate Limiting**: API endpoints are rate-limited
-- **Input Validation**: All inputs are validated and sanitized
-- **Privacy**: No personal data is stored or transmitted
-- **Caching**: Analysis results are cached to improve performance
 
 ## 🧪 Testing
 
-Run the comprehensive test suite:
+- **Backend smoke test**
+  ```bash
+  cd backend
+  uvicorn main:app --reload
+  ```
+  Exercise `/api/v1/health`, `/api/v1/analyze-fast/{address}`, and `/docs` to confirm dependencies are loaded.
 
-```bash
-# Comprehensive system test
-python test_bitscan.py
+- **Frontend quality checks**
+  ```bash
+  cd frontend
+  npm run lint
+  npm run build
+  ```
 
-# Test EllipticPlusPlus integration
-python integrate_elliptic_dataset.py
+Add automated tests under `backend/tests/` or `frontend/src/__tests__/` as the project evolves. Monitor FastAPI logs for rate-limit warnings when load-testing.
 
-# Test individual components
-python -c "from test_bitscan import BitScanTester; import asyncio; asyncio.run(BitScanTester().test_model_training())"
-```
 
-The test suite includes:
-- ✅ API connection testing
-- ✅ ML model training validation
-- ✅ Fraud detection accuracy
-- ✅ EllipticPlusPlus dataset integration
-- ✅ Comprehensive system health checks
 
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- BlockCypher for blockchain data API
-- scikit-learn and XGBoost teams for ML frameworks
-- FastAPI team for the excellent web framework
-- Bitcoin community for open blockchain data
-
-## 📞 Support
-
-- **Documentation**: [https://bitscan.readthedocs.io](https://bitscan.readthedocs.io)
-- **Issues**: [GitHub Issues](https://github.com/bitscan/bitscan/issues)
-- **Email**: support@bitscan.com
-- **Discord**: [BitScan Community](https://discord.gg/bitscan)
-
-## 🔄 Roadmap
-
-- [ ] Ethereum and other cryptocurrency support
-- [ ] Browser extension for real-time warnings
-- [ ] Mobile app for on-the-go analysis
-- [ ] Advanced graph neural networks
-- [ ] Integration with major exchanges
-- [ ] Multi-language support
 
 ---
 

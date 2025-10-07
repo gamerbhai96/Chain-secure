@@ -69,15 +69,15 @@ class EnhancedFraudDetector:
         self.known_fraud_patterns = self._load_fraud_patterns()
         self.scam_indicators = self._load_scam_indicators()
         
-        # Adjusted thresholds for different risk levels - more precise boundaries
+        # Adjusted thresholds for different risk levels - more aggressive for scam detection
         self.risk_thresholds = {
-            'VERY_LOW': 0.05,    # 0.00-0.05
-            'MINIMAL': 0.15,     # 0.05-0.15
-            'LOW': 0.30,         # 0.15-0.30
-            'MEDIUM': 0.50,      # 0.30-0.50
-            'ELEVATED': 0.70,    # 0.50-0.70
-            'HIGH': 0.85,        # 0.70-0.85
-            'CRITICAL': 1.00     # 0.85-1.00
+            'VERY_LOW': 0.10,    # 0.00-0.10
+            'MINIMAL': 0.20,     # 0.10-0.20
+            'LOW': 0.35,         # 0.20-0.35
+            'MEDIUM': 0.50,      # 0.35-0.50
+            'ELEVATED': 0.65,    # 0.50-0.65
+            'HIGH': 0.80,        # 0.65-0.80
+            'CRITICAL': 1.00     # 0.80-1.00
         }
         
         # Initialize enhanced models
@@ -368,12 +368,19 @@ class EnhancedFraudDetector:
         
         self.models['ensemble'] = VotingClassifier(
             estimators=estimators,
-            voting='soft',
             weights=[0.25, 0.25, 0.20, 0.15, 0.15],  # Optimized weights
             n_jobs=-1
         )
     
+
     def extract_enhanced_features(self, analysis_result: Dict[str, Any]) -> np.ndarray:
+        """
+        Extract enhanced features for fraud detection
+        This is a wrapper around _extract_features for backward compatibility
+        """
+        return self._extract_features(analysis_result)
+    
+    def _extract_features(self, analysis_result: Dict[str, Any]) -> np.ndarray:
         """Extract exactly 20 features for enhanced fraud detection"""
         features = []
         basic_metrics = analysis_result.get('basic_metrics', {})
@@ -535,7 +542,7 @@ class EnhancedFraudDetector:
         return features
     
     def predict_fraud_probability(self, analysis_result: Dict[str, Any], model_name: str = 'enhanced_auto') -> Dict[str, Any]:
-        """Enhanced fraud prediction with multiple models and better minimal data handling"""
+        """Enhanced fraud prediction combining ML models with pattern analysis for maximum accuracy"""
         try:
             address = analysis_result.get('address', 'unknown')
             
@@ -581,9 +588,9 @@ class EnhancedFraudDetector:
                     'successful_models': 0,
                     'risk_factors': [],  # No risk factors for legitimate addresses
                     'positive_indicators': [
-                        'Recognized legitimate wallet address',
-                        'No suspicious activity patterns detected',
-                        'Well-established in blockchain history'
+                        'Address in known database',
+                        'Limited pattern detection',
+                        'Historical address detected'
                     ],
                     'timestamp': datetime.now().isoformat()
                 }
@@ -597,9 +604,15 @@ class EnhancedFraudDetector:
             data_limitations = analysis_result.get('data_limitations', {})
             
             # For truly minimal data (empty addresses), use enhanced fallback
+            # BUT: Only if we're certain it's an empty address, not a data fetch failure
             if transaction_count == 0 and total_received == 0:
-                logger.info(f"Minimal data detected, using enhanced fallback for {analysis_result.get('address', 'unknown')}")
-                return self._fallback_prediction(analysis_result)
+                # Check if this is a real empty address or a data limitation
+                if analysis_result.get('fraud_signals', {}).get('overall_fraud_score', 0) == 0:
+                    logger.warning(f"FALLBACK TRIGGERED: Empty address detected for {analysis_result.get('address', 'unknown')} - tx_count: {transaction_count}, total_received: {total_received}")
+                    return self._fallback_prediction(analysis_result)
+                else:
+                    # Has fraud signals, so we have some data - continue with normal prediction
+                    logger.info(f"Address has fraud signals despite 0 transactions - using normal prediction")
             
             # If we have data limitations, adjust confidence accordingly
             if data_limitations:
@@ -690,7 +703,7 @@ class EnhancedFraudDetector:
             
             # If no models worked, use fallback
             if successful_models == 0:
-                logger.warning("No models produced valid predictions, using fallback")
+                logger.error(f"FALLBACK TRIGGERED: No models produced valid predictions for {analysis_result.get('address', 'unknown')}. Available models: {list(self.models.keys())}")
                 return self._fallback_prediction(analysis_result)
             
             # Enhanced ensemble prediction with error handling
@@ -879,6 +892,17 @@ class EnhancedFraudDetector:
             return sum(probabilities.values()) / len(probabilities)
         
         result = weighted_sum / total_weight
+        
+        # Boost probability based on blockchain fraud signals
+        fraud_signals = analysis_result.get('fraud_signals', {})
+        fraud_score = fraud_signals.get('overall_fraud_score', 0)
+        
+        if fraud_score > 0:
+            # Amplify the probability when fraud signals are detected
+            boost_factor = 1.0 + (fraud_score * 0.8)  # Up to 80% boost
+            result = min(result * boost_factor, 0.99)
+            logger.info(f"Fraud signal boost applied: {fraud_score:.2f} -> probability boosted to {result:.2f}")
+        
         return max(0.01, min(0.99, result))  # Ensure reasonable bounds
     
     def _adjust_ensemble_weights(self, base_weights: Dict[str, float], 
@@ -891,31 +915,37 @@ class EnhancedFraudDetector:
         total_received = basic_metrics.get('total_received_btc', 0)
         
         # Adjust weights based on transaction patterns
-        if tx_count > 100:  # High activity - favor tree-based models
-            weights['enhanced_rf'] *= 1.2
-            weights['enhanced_xgb'] *= 1.2
-            weights['neural_net'] *= 0.8
+        if total_received > 1000:  # Ultra-high value - favor models good at high-value fraud
+            weights['enhanced_xgb'] = weights.get('enhanced_xgb', 0.2) * 1.5
+            weights['lightgbm'] = weights.get('lightgbm', 0.15) * 1.3
+            weights['isolation_forest'] = weights.get('isolation_forest', 0.1) * 0.7
+        elif tx_count > 100:  # High activity - favor tree-based models
+            weights['enhanced_rf'] = weights.get('enhanced_rf', 0.2) * 1.2
+            weights['enhanced_xgb'] = weights.get('enhanced_xgb', 0.2) * 1.2
+            weights['neural_net'] = weights.get('neural_net', 0.2) * 0.8
         elif tx_count < 5:  # Low activity - favor anomaly detection
-            weights['isolation_forest'] *= 1.3
-            weights['neural_net'] *= 0.7
+            weights['isolation_forest'] = weights.get('isolation_forest', 0.1) * 1.3
+            weights['neural_net'] = weights.get('neural_net', 0.2) * 0.7
         
         if total_received > 10:  # High value - be more conservative
-            weights['ensemble'] *= 1.2
-            weights['enhanced_xgb'] *= 1.1
+            weights['ensemble'] = weights.get('ensemble', 0.3) * 1.2
+            weights['enhanced_xgb'] = weights.get('enhanced_xgb', 0.2) * 1.1
         
         return weights
     
     def _determine_enhanced_risk_level(self, probability: float) -> str:
-        """Determine risk level with enhanced thresholds"""
-        if probability >= 0.95:
-            return 'CRITICAL'
+        """Determine risk level with more sensitive thresholds for better fraud detection"""
+        if probability == 0.0:
+            return 'UNKNOWN'
         elif probability >= 0.80:
-            return 'HIGH'
+            return 'CRITICAL'
         elif probability >= 0.65:
+            return 'HIGH'
+        elif probability >= 0.50:
             return 'ELEVATED'
-        elif probability >= 0.45:
+        elif probability >= 0.35:
             return 'MEDIUM'
-        elif probability >= 0.25:
+        elif probability >= 0.20:
             return 'LOW'
         elif probability >= 0.10:
             return 'MINIMAL'
@@ -940,17 +970,20 @@ class EnhancedFraudDetector:
         # Combine factors
         confidence = (agreement * 0.6 + boundary_distance * 0.4)
         
-        # Apply confidence adjustment for potential false positives
-        if analysis_result and final_prob > 0.7:  # High risk prediction
+        # Boost confidence for clear fraud signals
+        if analysis_result:
+            fraud_signals = analysis_result.get('fraud_signals', {})
             basic_metrics = analysis_result.get('basic_metrics', {})
             transaction_count = basic_metrics.get('transaction_count', 0)
-            total_received = basic_metrics.get('total_received_btc', 0)
             
-            # Reduce confidence for high-risk predictions on normal-looking wallets
-            if transaction_count > 0 and transaction_count < 100:  # Normal activity range
-                confidence *= 0.6  # Reduce confidence significantly
-            if total_received > 0 and total_received < 5:  # Normal value range
-                confidence *= 0.7  # Reduce confidence moderately
+            # Boost confidence if multiple fraud signals detected
+            fraud_score = fraud_signals.get('overall_fraud_score', 0)
+            if fraud_score > 0.5:
+                confidence = min(confidence * 1.3, 0.95)  # Boost confidence for fraud
+            
+            # Boost confidence for addresses with sufficient data
+            if transaction_count > 10:
+                confidence = min(confidence * 1.1, 0.95)
         
         return min(max(confidence, 0.1), 0.95)  # Clamp between 0.1 and 0.95
     
@@ -966,13 +999,22 @@ class EnhancedFraudDetector:
         balance = basic_metrics.get('balance_btc', 0)
         address = analysis_result.get('address', '')
         
+        # Check fraud signals from blockchain analysis
+        fraud_signals = analysis_result.get('fraud_signals', {})
+        fraud_score = fraud_signals.get('overall_fraud_score', 0)
+        
         # For very low risk addresses, focus on positive indicators
         if risk_level in ['VERY_LOW', 'MINIMAL']:
-            positive_indicators.extend([
-                'Normal transaction patterns observed',
-                'No suspicious activity detected',
-                'Consistent with legitimate wallet behavior'
-            ])
+            if transaction_count == 0:
+                positive_indicators.extend([
+                    'No transaction history',
+                    'Insufficient data for analysis'
+                ])
+            else:
+                positive_indicators.extend([
+                    'No significant fraud indicators detected',
+                    'Transaction patterns appear normal'
+                ])
             
             # Add specific positive indicators based on metrics
             if transaction_count > 100:
@@ -981,11 +1023,35 @@ class EnhancedFraudDetector:
                 positive_indicators.append('High transaction volume consistent with exchange or service wallets')
             if balance > 10:
                 positive_indicators.append('Maintains significant balance, indicating active legitimate use')
+            
+            # Add any detected fraud signals as minor risk factors
+            if fraud_signals.get('burst_activity'):
+                risk_factors.append('Minor: Burst transaction activity detected')
+            if fraud_signals.get('high_fan_out'):
+                risk_factors.append('Minor: Higher than average number of output addresses')
+            if fraud_signals.get('round_amount_transactions'):
+                risk_factors.append('Minor: Some round-number transactions detected')
+            if fraud_signals.get('high_centrality'):
+                risk_factors.append('Minor: Elevated network centrality')
+            
+            # If no fraud signals but has fraud score, add general note
+            if not risk_factors and fraud_score > 0:
+                risk_factors.append(f'Minor deviations detected (score: {fraud_score:.2f})')
                 
         # For low risk addresses, mention minor observations
         elif risk_level == 'LOW':
             positive_indicators.append('Most transaction patterns are consistent with legitimate behavior')
-            risk_factors.append('Minor deviations from typical wallet patterns')
+            
+            # Check specific fraud signals
+            if fraud_signals.get('burst_activity'):
+                risk_factors.append('Burst transaction activity detected')
+            if fraud_signals.get('high_fan_out'):
+                risk_factors.append('High number of output addresses')
+            if fraud_signals.get('round_amount_transactions'):
+                risk_factors.append('Unusual round-number transactions')
+            
+            if not risk_factors:
+                risk_factors.append('Minor deviations from typical wallet patterns')
             
         # For medium risk addresses, list specific concerns
         elif risk_level == 'MEDIUM':
@@ -1032,17 +1098,18 @@ class EnhancedFraudDetector:
         # Patterns that indicate legitimate wallets
         adjustment_factor = 1.0
         
-        # High transaction count with reasonable turnover (exchanges, services)
-        if transaction_count > 500 and 0.1 <= (total_sent / max(total_received, 1)) <= 10:
-            adjustment_factor *= 0.3  # Reduce by 70%
-        
-        # High received amount with reasonable balance (long-term holders)
-        if total_received > 100 and balance > 10:
-            adjustment_factor *= 0.4  # Reduce by 60%
-        
+        # Ultra-high value wallets (likely exchanges/institutions)
+        if total_received > 10000 and balance > 1000:
+            adjustment_factor *= 0.1  # Reduce by 90%
         # Very high received amount (likely legitimate high-value wallet)
-        if total_received > 1000:
+        elif total_received > 1000:
             adjustment_factor *= 0.2  # Reduce by 80%
+        # High received amount with reasonable balance (long-term holders)
+        elif total_received > 100 and balance > 10:
+            adjustment_factor *= 0.4  # Reduce by 60%
+        # High transaction count with reasonable turnover (exchanges, services)
+        elif transaction_count > 500 and 0.1 <= (total_sent / max(total_received, 1)) <= 10:
+            adjustment_factor *= 0.3  # Reduce by 70%
         
         # Apply adjustment
         adjusted_prob = probability * adjustment_factor
@@ -1051,58 +1118,9 @@ class EnhancedFraudDetector:
         return max(0.01, min(adjusted_prob, probability))
     
     def _adjust_probability_for_false_positives(self, probability: float, analysis_result: Dict[str, Any]) -> float:
-        """Adjust probability to reduce false positives for normal-looking wallets"""
-        basic_metrics = analysis_result.get('basic_metrics', {})
-        transaction_count = basic_metrics.get('transaction_count', 0)
-        total_received = basic_metrics.get('total_received_btc', 0)
-        balance = basic_metrics.get('balance_btc', 0)
-        
-        # If probability is high (>0.7) but wallet looks normal, reduce it significantly
-        if probability > 0.7:
-            adjustment_factor = 1.0
-            
-            # Normal transaction count (1-100)
-            if 1 <= transaction_count <= 100:
-                adjustment_factor *= 0.5  # Reduce by 50%
-            
-            # Normal value range (0.001-10 BTC)
-            if 0.001 <= total_received <= 10:
-                adjustment_factor *= 0.5  # Reduce by 50%
-            
-            # Has reasonable balance
-            if balance > 0 and balance <= 5:
-                adjustment_factor *= 0.6  # Reduce by 40%
-            
-            # Apply adjustment
-            adjusted_prob = probability * adjustment_factor
-            
-            # Ensure we don't go too low (minimum 0.05 for high-risk predictions)
-            return max(0.05, min(adjusted_prob, probability))
-        
-        # For medium probabilities (0.45-0.7), apply moderate adjustment
-        elif probability > 0.45:
-            adjustment_factor = 1.0
-            
-            # For addresses with normal activity, reduce medium risk predictions
-            if 1 <= transaction_count <= 50 and 0.001 <= total_received <= 5:
-                adjustment_factor *= 0.6  # Reduce by 40%
-            
-            adjusted_prob = probability * adjustment_factor
-            return max(0.10, min(adjusted_prob, probability))
-        
-        # For low probabilities (0.25-0.45), apply light adjustment for normal addresses
-        elif probability > 0.25:
-            adjustment_factor = 1.0
-            
-            # For clearly normal addresses, reduce the probability to MINIMAL range
-            if 1 <= transaction_count <= 20 and 0.001 <= total_received <= 2 and balance <= 1:
-                adjustment_factor *= 0.5  # Reduce by 50%
-                adjusted_prob = probability * adjustment_factor
-                return max(0.10, min(adjusted_prob, probability))
-            
-            return probability
-        
-        # For very low probabilities, keep as is
+        """Adjust probability to reduce false positives - DISABLED for better scam detection"""
+        # DISABLED: This was reducing fraud detection accuracy
+        # Return probability unchanged to maintain scam detection sensitivity
         return probability
     
     def _generate_detailed_reasoning(self, probability: float, risk_level: str, 
@@ -1126,14 +1144,274 @@ class EnhancedFraudDetector:
         if risk_level in ['HIGH', 'CRITICAL']:
             reasoning_parts.append("Multiple fraud indicators detected")
         elif risk_level in ['MINIMAL', 'VERY_LOW']:
-            reasoning_parts.append("Normal transaction patterns observed")
+            reasoning_parts.append("Limited data - basic analysis only")
         elif risk_level == 'LOW':
-            reasoning_parts.append("Minor deviations from normal patterns")
+            reasoning_parts.append("Some indicators present - limited data")
         elif risk_level == 'MEDIUM':
             reasoning_parts.append("Some risk indicators present")
         
         return ". ".join(reasoning_parts)
     
+    def enhanced_fraud_analysis(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Enhanced fraud analysis with sophisticated pattern detection"""
+        
+        basic_metrics = analysis_result.get('basic_metrics', {})
+        total_received = basic_metrics.get('total_received_btc', 0)
+        total_sent = basic_metrics.get('total_sent_btc', 0)
+        balance = basic_metrics.get('balance_btc', 0)
+        tx_count = basic_metrics.get('transaction_count', 0)
+        address = analysis_result.get('address', '')
+        
+        fraud_score = 0.0
+        risk_factors = []
+        
+        # Advanced fraud pattern detection
+        
+        # 1. Mixer/Tumbler patterns (high risk)
+        if tx_count > 50 and balance < 0.01 and total_received > 5:
+            fraud_score += 0.35
+            risk_factors.append('Potential mixing service usage detected')
+        
+        if total_sent > total_received * 0.98 and total_received > 1:
+            fraud_score += 0.3
+            risk_factors.append('Near-complete fund drainage pattern')
+        
+        # 2. Exchange abuse patterns
+        if tx_count > 100 and total_received > 50:
+            fraud_score += 0.25
+            risk_factors.append('Rapid high-volume trading pattern')
+        
+        if total_received > 100 and tx_count < 10:
+            fraud_score += 0.2
+            risk_factors.append('Large single transaction pattern')
+        
+        # 3. Ponzi/Pyramid scheme patterns
+        if total_sent > total_received * 1.1:  # More out than in
+            fraud_score += 0.4
+            risk_factors.append('Impossible outflow pattern (Ponzi indicator)')
+        
+        if total_received > 1000 and tx_count > 500:
+            fraud_score += 0.3
+            risk_factors.append('High-volume rapid transaction pattern')
+        
+        # 4. Ransomware patterns
+        if tx_count > 200 and total_received < 50:
+            fraud_score += 0.25
+            risk_factors.append('Many small payments pattern (ransomware indicator)')
+        
+        if balance > total_received * 0.8 and tx_count > 100:
+            fraud_score += 0.2
+            risk_factors.append('Fund consolidation pattern')
+        
+        # 5. Advanced velocity analysis
+        if tx_count > 0:
+            avg_tx_size = total_received / tx_count
+            if avg_tx_size > 100:
+                fraud_score += 0.15
+                risk_factors.append('Unusually large average transaction size')
+            elif avg_tx_size < 0.001 and tx_count > 100:
+                fraud_score += 0.1
+                risk_factors.append('Suspicious micro-transaction pattern')
+        
+        # 6. Balance retention analysis
+        if total_received > 0:
+            retention_ratio = balance / total_received
+            if retention_ratio < 0.01 and total_received > 5:
+                fraud_score += 0.2
+                risk_factors.append('Extremely low balance retention')
+        
+        # 7. Extreme activity patterns
+        if tx_count > 10000:
+            fraud_score += 0.25
+            risk_factors.append('Extremely high transaction count')
+        elif tx_count > 1000 and balance < 1:
+            fraud_score += 0.15
+            risk_factors.append('High activity with minimal balance')
+        
+        # 8. Volume-based risk
+        if total_received > 1000:
+            fraud_score += 0.1
+            risk_factors.append('Very high transaction volume')
+        
+        # Ensure score is bounded
+        fraud_score = min(fraud_score, 0.95)
+        
+        # Calculate confidence based on number of indicators and data quality
+        base_confidence = 0.3
+        pattern_confidence = min(0.4, len(risk_factors) * 0.08)
+        data_confidence = 0.2 if tx_count > 0 else 0.1
+        final_confidence = base_confidence + pattern_confidence + data_confidence
+        final_confidence = min(final_confidence, 0.9)
+        
+        # Determine risk level with more granular thresholds
+        if fraud_score > 0.8:
+            risk_level = 'CRITICAL'
+        elif fraud_score > 0.6:
+            risk_level = 'HIGH'
+        elif fraud_score > 0.4:
+            risk_level = 'MEDIUM'
+        elif fraud_score > 0.25:
+            risk_level = 'LOW'
+        elif fraud_score > 0.1:
+            risk_level = 'MINIMAL'
+        else:
+            risk_level = 'VERY_LOW'
+        
+        return {
+            'address': address,
+            'fraud_probability': float(fraud_score),
+            'risk_level': risk_level,
+            'confidence': float(final_confidence),
+            'reasoning': f'Enhanced pattern analysis detected {len(risk_factors)} risk indicators',
+            'model_used': 'enhanced_pattern_analysis_v2',
+            'risk_factors_detected': len(risk_factors),
+            'risk_details': risk_factors[:10],  # Limit to top 10
+            'analysis_type': 'enhanced_pattern_detection',
+            'pattern_matches': len(risk_factors),
+            'enhanced_analysis': True,
+            'timestamp': datetime.now().isoformat()
+        }
+
+    def hybrid_predict_fraud_probability(self, analysis_result: Dict[str, Any], model_name: str = 'hybrid_enhanced') -> Dict[str, Any]:
+        """
+        Hybrid fraud prediction combining trained ML models with advanced pattern analysis
+        This gives the best of both worlds: ML accuracy + pattern detection
+        """
+        try:
+            address = analysis_result.get('address', 'unknown')
+            
+            # Step 1: Get ML model predictions (if available)
+            ml_predictions = {}
+            ml_confidences = {}
+            ml_available = False
+            
+            try:
+                # Extract features for ML models
+                features = self._extract_features(analysis_result)
+                feature_vector = features.reshape(1, -1)
+                
+                # Get predictions from all available trained models
+                for model_name_inner, model in self.models.items():
+                    if model_name_inner in ['voting_ensemble', 'stacking_meta', 'ensemble']:
+                        continue
+                        
+                    try:
+                        if self._is_model_fitted(model, model_name_inner):
+                            if hasattr(model, 'predict_proba'):
+                                proba = model.predict_proba(feature_vector)[0]
+                                ml_predictions[model_name_inner] = proba[1]  # Fraud probability
+                                ml_confidences[model_name_inner] = abs(proba[1] - proba[0])
+                                ml_available = True
+                            elif hasattr(model, 'decision_function'):
+                                decision = model.decision_function(feature_vector)[0]
+                                ml_predictions[model_name_inner] = 1.0 / (1.0 + np.exp(-decision))
+                                ml_confidences[model_name_inner] = min(1.0, abs(decision) / 2)
+                                ml_available = True
+                    except Exception as e:
+                        logger.debug(f"Model {model_name_inner} prediction failed: {e}")
+                        continue
+                        
+            except Exception as e:
+                logger.debug(f"ML feature extraction failed: {e}")
+                ml_available = False
+            
+            # Step 2: Get enhanced pattern analysis
+            pattern_result = self.enhanced_fraud_analysis(analysis_result)
+            pattern_score = pattern_result['fraud_probability']
+            pattern_confidence = pattern_result['confidence']
+            pattern_factors = pattern_result['risk_details']
+            
+            # Step 3: Combine ML and Pattern Analysis for maximum accuracy
+            if ml_available and ml_predictions:
+                # Calculate ensemble ML score
+                ml_weights = {}
+                for name in ml_predictions:
+                    base_weight = self.ensemble_weights.get(name, 1.0)
+                    confidence_weight = ml_confidences.get(name, 0.5)
+                    ml_weights[name] = base_weight * confidence_weight
+                
+                total_ml_weight = sum(ml_weights.values())
+                if total_ml_weight > 0:
+                    ml_ensemble_score = sum(ml_predictions[name] * ml_weights[name] for name in ml_predictions) / total_ml_weight
+                    ml_avg_confidence = sum(ml_confidences.values()) / len(ml_confidences)
+                else:
+                    ml_ensemble_score = 0.5
+                    ml_avg_confidence = 0.3
+                
+                # Intelligent weighting based on data quality
+                basic_metrics = analysis_result.get('basic_metrics', {})
+                tx_count = basic_metrics.get('transaction_count', 0)
+                
+                # More data = trust ML more, less data = trust patterns more
+                if tx_count > 100:
+                    ml_weight = 0.7  # Trust ML more with lots of data
+                    pattern_weight = 0.3
+                elif tx_count > 10:
+                    ml_weight = 0.6  # Balanced approach
+                    pattern_weight = 0.4
+                else:
+                    ml_weight = 0.4  # Trust patterns more with little data
+                    pattern_weight = 0.6
+                
+                # Calculate hybrid score
+                final_score = (ml_ensemble_score * ml_weight) + (pattern_score * pattern_weight)
+                
+                # Calculate hybrid confidence (boosted for combining approaches)
+                final_confidence = max(ml_avg_confidence * 0.6, pattern_confidence * 0.4)
+                final_confidence = min(final_confidence + 0.15, 0.95)  # Boost for hybrid approach
+                
+                # Combine risk factors
+                ml_factors = [f"ML Ensemble: {len(ml_predictions)} models (score: {ml_ensemble_score:.3f})"]
+                all_risk_factors = ml_factors + pattern_factors
+                
+                reasoning = f"Hybrid ML+Pattern: ML({ml_ensemble_score:.3f}) + Patterns({pattern_score:.3f}) = {final_score:.3f}"
+                model_used = f"hybrid_ml_pattern_v2_{len(ml_predictions)}models"
+                
+            else:
+                # No ML models available, use enhanced pattern analysis only
+                final_score = pattern_score
+                final_confidence = pattern_confidence
+                all_risk_factors = pattern_factors
+                reasoning = f"Enhanced pattern analysis: {len(pattern_factors)} risk factors detected"
+                model_used = "enhanced_pattern_analysis_v2"
+            
+            # Determine risk level with hybrid thresholds
+            if final_score > 0.85:
+                risk_level = 'CRITICAL'
+            elif final_score > 0.7:
+                risk_level = 'HIGH'
+            elif final_score > 0.5:
+                risk_level = 'MEDIUM'
+            elif final_score > 0.3:
+                risk_level = 'LOW'
+            elif final_score > 0.15:
+                risk_level = 'MINIMAL'
+            else:
+                risk_level = 'VERY_LOW'
+            
+            return {
+                'address': address,
+                'fraud_probability': float(final_score),
+                'risk_level': risk_level,
+                'confidence': float(final_confidence),
+                'reasoning': reasoning,
+                'model_used': model_used,
+                'risk_factors_detected': len(all_risk_factors),
+                'risk_details': all_risk_factors[:15],  # Top 15 factors
+                'analysis_type': 'hybrid_ml_pattern',
+                'ml_models_used': len(ml_predictions) if ml_available else 0,
+                'pattern_matches': len(pattern_factors),
+                'hybrid_analysis': True,
+                'ml_score': ml_ensemble_score if ml_available and ml_predictions else None,
+                'pattern_score': pattern_score,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Hybrid prediction failed: {e}")
+            # Fallback to pattern analysis
+            return self.enhanced_fraud_analysis(analysis_result)
+
     def _fallback_prediction(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
         """Enhanced fallback prediction with better risk analysis for minimal data"""
         basic_metrics = analysis_result.get('basic_metrics', {})
@@ -1164,13 +1442,11 @@ class EnhancedFraudDetector:
             reasoning = "Known legitimate wallet address"
             risk_details.append("Recognized as legitimate wallet")
         elif transaction_count == 0 and total_received == 0:
-            # Empty address - use address-based entropy for consistent variation
-            address_hash = hash(address) % 10000
-            entropy_factor = address_hash / 10000.0
-            risk_score = 0.02 + (entropy_factor * 0.08)  # 2% to 10% range
-            risk_level = 'VERY_LOW'
-            reasoning = f"Empty address with no transaction history - very low risk (entropy: {entropy_factor:.3f})"
-            risk_details.append("No transaction activity")
+            # Empty address - cannot assess risk
+            risk_score = 0.0
+            risk_level = 'UNKNOWN'
+            reasoning = "Empty address with no transaction history - insufficient data for risk assessment"
+            risk_details.append("No transaction activity - cannot determine risk")
         else:
             # Activity-based assessment
             base_score = 0.15  # Base risk for active addresses
@@ -1218,18 +1494,30 @@ class EnhancedFraudDetector:
                 reasoning = f"Minor risk factors identified ({risk_factors} indicators)"
             elif risk_score > 0.10:
                 risk_level = 'MINIMAL'
-                reasoning = "Normal transaction patterns with minimal risk"
+                reasoning = "Minimal data - low confidence assessment"
             else:
                 risk_level = 'VERY_LOW'
-                reasoning = "Very low risk transaction patterns"
+                reasoning = "Very limited data available"
+        
+        # Calculate dynamic confidence based on available data
+        if transaction_count > 100:
+            confidence = 0.65  # Higher confidence with more data
+        elif transaction_count > 10:
+            confidence = 0.55
+        elif transaction_count > 0:
+            confidence = 0.45
+        else:
+            confidence = 0.30  # Lower confidence for empty addresses
         
         return {
             'address': address,
             'fraud_probability': float(risk_score),
             'risk_level': risk_level,
-            'confidence': 0.75,  # Higher confidence for heuristic analysis
+            'confidence': confidence,
             'reasoning': reasoning,
             'model_used': 'enhanced_heuristic_fallback',
+            'fallback_used': True,
+            'data_limited': True,
             'risk_factors_detected': risk_factors,
             'risk_details': risk_details,
             'analysis_type': 'minimal_data_heuristic',

@@ -655,19 +655,20 @@ class BlockchainAnalyzer:
             # Rapid fund movement
             temporal_data = analysis_data.get('temporal_analysis', {})
             burst_detection = temporal_data.get('burst_detection', {})
-            if burst_detection.get('burst_count', 0) > 2:
+            if burst_detection.get('burst_count', 0) > 5:
                 fraud_signals['burst_activity'] = True
-                score += 0.15
-                flags.append("Multiple burst activity periods detected")
+                score += 0.10
+                flags.append("Multiple burst activity periods detected (>5)")
             
             # High fan-out (many output addresses)
             transaction_patterns = analysis_data.get('transaction_patterns', {})
             flow_concentration = transaction_patterns.get('flow_concentration', {})
             
             unique_outputs = flow_concentration.get('unique_output_addresses', 0)
-            if unique_outputs > 50:
+            tx_count = basic_info.get('transaction_count', 1)
+            if unique_outputs > max(100, tx_count * 1.5):
                 fraud_signals['high_fan_out'] = True
-                score += 0.2
+                score += 0.15
                 flags.append(f"High fan-out pattern: {unique_outputs} unique output addresses")
             
             # Round amount transactions
@@ -675,9 +676,9 @@ class BlockchainAnalyzer:
             round_amounts = amount_stats.get('round_amounts', 0)
             total_transactions = basic_info.get('transaction_count', 1)
             
-            if round_amounts / max(total_transactions, 1) > 0.3:
+            if round_amounts / max(total_transactions, 1) > 0.5:
                 fraud_signals['round_amount_transactions'] = True
-                score += 0.1
+                score += 0.05
                 flags.append(f"High proportion of round amount transactions: {round_amounts}/{total_transactions}")
             
             # High centrality in network
@@ -685,9 +686,9 @@ class BlockchainAnalyzer:
             centrality = network_analysis.get('centrality_measures', {})
             betweenness = centrality.get('betweenness_centrality', 0)
             
-            if betweenness > 0.1:
+            if betweenness > 0.25:
                 fraud_signals['high_centrality'] = True
-                score += 0.15
+                score += 0.10
                 flags.append(f"High betweenness centrality: {betweenness:.3f}")
             
             # Cluster fragmentation

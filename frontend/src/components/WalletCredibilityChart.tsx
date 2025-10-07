@@ -113,9 +113,8 @@ const WalletCredibilityChart: FC<Props> = ({
 
   // Calculate optimal granularity based on time range
   const getOptimalGranularity = (days: number): Granularity => {
-    if (days <= 30) return 'day';
-    if (days <= 90) return 'week';
-    if (days <= 180) return 'week';
+    if (days <= 90) return 'week';  // 30d and 90d use weekly
+    if (days <= 180) return 'month'; // 6m uses monthly
     return 'month';
   };
 
@@ -145,29 +144,34 @@ const WalletCredibilityChart: FC<Props> = ({
     );
 
     // Process data points for consistent display
-    return sorted.map(point => ({
-      ...point,
-      // Ensure numeric values
-      received_btc: Number(point.received_btc) || 0,
-      sent_btc: Number(point.sent_btc) || 0,
-      cumulative_balance_btc: Number(point.cumulative_balance_btc) || 0,
-      // Format date based on granularity
-      formattedDate: new Date(point.date).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: timeframe.granularity === 'month' ? 'short' : 'numeric',
-        day: timeframe.granularity === 'day' ? 'numeric' : undefined,
-      })
-    }));
+    return sorted.map(point => {
+      const dateObj = new Date(point.date);
+      const isValidDate = !isNaN(dateObj.getTime());
+      
+      return {
+        ...point,
+        // Ensure numeric values
+        received_btc: Number(point.received_btc) || 0,
+        sent_btc: Number(point.sent_btc) || 0,
+        cumulative_balance_btc: Number(point.cumulative_balance_btc) || 0,
+        // Format date based on granularity with validation
+        formattedDate: isValidDate 
+          ? dateObj.toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: timeframe.granularity === 'month' ? 'short' : 'numeric',
+              day: timeframe.granularity === 'day' ? 'numeric' : undefined,
+            })
+          : point.date
+      };
+    });
   }, [data, timeframe.granularity]);
   
-  // Calculate chart width based on number of data points
-  const chartWidth = useMemo(() => {
-    if (!chartData.length) return '100%';
-    // Base width for each data point in pixels
-    const baseWidth = timeframe.granularity === 'day' ? 60 : 100;
-    const minWidth = 1200; // Minimum width to ensure readability
-    return `${Math.max(chartData.length * baseWidth, minWidth)}px`;
-  }, [chartData.length, timeframe.granularity]);
+  // Limit displayed data points to prevent scrolling
+  const displayData = useMemo(() => {
+    if (!chartData.length) return [];
+    const maxPoints = timeframe.granularity === 'week' ? 16 : 12;
+    return chartData.slice(-maxPoints);
+  }, [chartData, timeframe.granularity]);
 
   // Fetch data when address or timeframe changes
   useEffect(() => {
@@ -271,77 +275,60 @@ const WalletCredibilityChart: FC<Props> = ({
         ))}
       </Box>
 
-      {/* Stats summary */}
+      {/* Stats summary - Compact */}
       {data?.summary && (
-        <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
           <Paper elevation={0} sx={{ 
-            p: 2, 
+            p: 1.5, 
             flex: 1, 
-            minWidth: 150, 
-            borderRadius: 2, 
+            minWidth: 140, 
+            borderRadius: 1.5, 
             border: '1px solid', 
             borderColor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' 
           }}>
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>Total Received (BTC)</Typography>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: '#10b981' }}>{(data.summary.total_received_btc || 0).toFixed(8)}</Typography>
+            <Typography variant="caption" sx={{ opacity: 0.6, fontSize: '0.7rem' }}>Received</Typography>
+            <Typography variant="body1" sx={{ fontWeight: 600, color: '#10b981', fontSize: '0.95rem' }}>{(data.summary.total_received_btc || 0).toFixed(8)} BTC</Typography>
           </Paper>
           <Paper elevation={0} sx={{ 
-            p: 2, 
+            p: 1.5, 
             flex: 1, 
-            minWidth: 150, 
-            borderRadius: 2, 
+            minWidth: 140, 
+            borderRadius: 1.5, 
             border: '1px solid', 
             borderColor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' 
           }}>
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>Total Sent (BTC)</Typography>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: '#ef4444' }}>{(data.summary.total_sent_btc || 0).toFixed(8)}</Typography>
+            <Typography variant="caption" sx={{ opacity: 0.6, fontSize: '0.7rem' }}>Sent</Typography>
+            <Typography variant="body1" sx={{ fontWeight: 600, color: '#ef4444', fontSize: '0.95rem' }}>{(data.summary.total_sent_btc || 0).toFixed(8)} BTC</Typography>
           </Paper>
           <Paper elevation={0} sx={{ 
-            p: 2, 
+            p: 1.5, 
             flex: 1, 
-            minWidth: 150, 
-            borderRadius: 2, 
+            minWidth: 140, 
+            borderRadius: 1.5, 
             border: '1px solid', 
             borderColor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' 
           }}>
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>Net Change (BTC)</Typography>
+            <Typography variant="caption" sx={{ opacity: 0.6, fontSize: '0.7rem' }}>Net Change</Typography>
             <Typography 
-              variant="h6" 
+              variant="body1" 
               sx={{ 
-                fontWeight: 700, 
+                fontWeight: 600, 
+                fontSize: '0.95rem',
                 color: (data.summary.net_change_btc || 0) >= 0 ? '#10b981' : '#ef4444' 
               }}
             >
-              {(data.summary.net_change_btc || 0) >= 0 ? '+' : ''}{(data.summary.net_change_btc || 0).toFixed(8)}
+              {(data.summary.net_change_btc || 0) >= 0 ? '+' : ''}{(data.summary.net_change_btc || 0).toFixed(8)} BTC
             </Typography>
           </Paper>
         </Box>
       )}
 
       {/* Chart container */}
-      <Box sx={{ 
-        width: '100%', 
-        overflowX: 'auto', 
-        '&::-webkit-scrollbar': { 
-          height: 8,
-          backgroundColor: dark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.05)' 
-        }, 
-        '&::-webkit-scrollbar-thumb': { 
-          backgroundColor: dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)', 
-          borderRadius: 4,
-          '&:hover': {
-            backgroundColor: dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'
-          }
-        } 
-      }}>
-        <Box sx={{ 
-          height: 400, 
-          minWidth: chartWidth, 
-          pr: 2
-        }}>
+      <Box sx={{ width: '100%' }}>
+        <Box sx={{ height: 300 }}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart 
-              data={chartData} 
+              data={displayData} 
               margin={{ top: 10, right: 20, bottom: 10, left: 0 }}
             >
               <defs>
@@ -364,7 +351,7 @@ const WalletCredibilityChart: FC<Props> = ({
                   fontSize: 12,
                   fill: dark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
                 }}
-                tickCount={Math.min(chartData.length, 12)}
+                tickCount={Math.min(displayData.length, 12)}
                 minTickGap={20}
                 axisLine={{ stroke: dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }}
                 tickLine={{ stroke: dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }}

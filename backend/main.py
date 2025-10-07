@@ -104,7 +104,7 @@ async def startup_event():
     """Initialize services on startup with enhanced fraud detector"""
     global blockchain_analyzer, fraud_detector, legacy_fraud_detector
     
-    print("🚀 Initializing BitScan services...")
+    print("Initializing BitScan services...")
     
     # Initialize blockchain analyzer
     blockchain_analyzer = BlockchainAnalyzer()
@@ -112,16 +112,16 @@ async def startup_event():
     # Initialize enhanced fraud detector
     try:
         fraud_detector = EnhancedFraudDetector()
-        print("✅ Enhanced fraud detector initialized successfully!")
+        print("Enhanced fraud detector initialized successfully!")
     except Exception as e:
-        print(f"⚠️ Enhanced fraud detector failed to initialize: {e}")
-        print("📋 Falling back to legacy fraud detector...")
+        print(f"Enhanced fraud detector failed to initialize: {e}")
+        print("Falling back to legacy fraud detector...")
         fraud_detector = FraudDetector()
     
     # Keep legacy detector as backup
     legacy_fraud_detector = FraudDetector()
     
-    print("✅ BitScan services initialized successfully!")
+    print("BitScan services initialized successfully!")
 
 @app.get("/", response_class=HTMLResponse)
 async def root():

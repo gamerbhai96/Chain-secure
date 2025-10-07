@@ -50,7 +50,7 @@ class BlockCypherClient:
         self.cache_ttl = 900  # 15 minutes cache TTL for better data freshness
         self.cache_stats = {'hits': 0, 'misses': 0}  # Cache performance tracking
         
-    async def _make_request_with_retry(self, endpoint: str, params: Dict = None, max_retries: int = 3) -> Dict:
+    async def _make_request_with_retry(self, endpoint: str, params: Dict = None, max_retries: int = 5) -> Dict:
         """Make request with exponential backoff retry mechanism"""
         for attempt in range(max_retries):
             try:
@@ -133,7 +133,7 @@ class BlockCypherClient:
         else:
             logger.debug(f"Making API request to {url} without token")
             
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             try:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
@@ -210,10 +210,63 @@ class BlockCypherClient:
                 }
             
             if response and isinstance(response, dict) and 'address' in response:
+                # If n_tx is missing or zero, try deriving from /full endpoint to avoid false "no data" cases
+                try:
+                    current_n_tx = int(response.get('n_tx', 0) or 0)
+                except Exception:
+                    current_n_tx = 0
+
+                if current_n_tx == 0:
+                    try:
+                        fallback = await self._make_request_with_retry(f"/addrs/{address}/full", {'limit': 100})
+                        txs = fallback.get('txs', []) if isinstance(fallback, dict) else []
+                        if txs:
+                            response['n_tx'] = len(txs)
+                            # Do not fabricate amounts; keep existing totals/balances if provided by /addrs
+                            logger.info(f"Derived n_tx={len(txs)} for {address} from /full fallback")
+                    except Exception as e:
+                        logger.debug(f"/full fallback for {address} failed: {e}")
+
                 return response
             elif response == {}:
-                # Handle empty response (404)
-                logger.info(f"Address {address} not found (404) - creating minimal response")
+                # Handle empty response (404) - try alternate endpoints before giving up
+                logger.info(f"Address {address} not found on /addrs - trying alternate endpoints")
+                
+                # Try /full endpoint to get transaction data
+                try:
+                    full_response = await self._make_request_with_retry(f"/addrs/{address}/full", {'limit': 50})
+                    if isinstance(full_response, dict) and 'txs' in full_response and full_response['txs']:
+                        txs = full_response['txs']
+                        # Calculate metrics from transactions
+                        total_received = 0
+                        total_sent = 0
+                        
+                        for tx in txs:
+                            for output in tx.get('outputs', []):
+                                if address in output.get('addresses', []):
+                                    total_received += output.get('value', 0)
+                            for input_tx in tx.get('inputs', []):
+                                if address in input_tx.get('addresses', []):
+                                    total_sent += input_tx.get('output_value', 0)
+                        
+                        balance = total_received - total_sent
+                        
+                        logger.info(f"Derived data for {address}: {len(txs)} txs, {total_received/1e8:.8f} BTC received")
+                        
+                        return {
+                            'address': address,
+                            'balance': balance,
+                            'total_received': total_received,
+                            'total_sent': total_sent,
+                            'n_tx': len(txs),
+                            'unconfirmed_balance': 0,
+                            'final_balance': balance,
+                            'note': 'Data derived from transaction history'
+                        }
+                except Exception as e:
+                    logger.warning(f"Full endpoint fallback failed for {address}: {e}")
+                
+                # Final fallback - return minimal response
                 return {
                     'address': address,
                     'balance': 0,
@@ -254,8 +307,8 @@ class BlockCypherClient:
     async def get_address_transactions(self, address: str, limit: int = 50, before: Optional[str] = None) -> List[Dict]:
         """Get transactions for an address with enhanced fallback methods and 404 handling"""
         try:
-            # Increased limit to 10000 as requested
-            effective_limit = min(limit, 10000)
+            # Increased limit to 50000 for comprehensive analysis
+            effective_limit = min(limit, 50000)
             params = {'limit': effective_limit}
             if before:
                 params['before'] = before
@@ -310,8 +363,8 @@ class BlockCypherClient:
     async def get_address_full_transactions(self, address: str, limit: int = 200) -> List[Dict]:
         """Get full transaction details for an address with enhanced 404 handling and time-based filtering"""
         try:
-            # Increased limit to 10000 transactions and optimize for recent activity
-            effective_limit = min(limit, 10000)
+            # Increased limit to 50000 transactions for comprehensive fraud analysis
+            effective_limit = min(limit, 50000)
             params = {'limit': effective_limit, 'includeHex': 'false'}
             
             response = await self._make_request_with_retry(f"/addrs/{address}/full", params)
@@ -358,7 +411,7 @@ class BlockCypherClient:
                         recent_transactions.append(tx)
                 
                 logger.info(f"Filtered {len(transactions)} transactions to {len(recent_transactions)} recent transactions for {address}")
-                return recent_transactions[:10000]  # Increased safety limit
+                return recent_transactions[:50000]  # Increased safety limit for comprehensive analysis
             
             return transactions
         except Exception as e:
