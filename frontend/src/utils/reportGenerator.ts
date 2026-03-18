@@ -209,9 +209,6 @@ const drawMetricCard = (
 const drawSectionHeader = (doc: jsPDF, title: string, y: number): number => {
   const { margin, pageWidth } = LAYOUT;
 
-  // Check if we're at the very top of a page (likely a page break issue)
-  const currentPage = doc.getCurrentPageInfo().pageNumber;
-  const pageHeight = LAYOUT.pageHeight;
   const headerHeight = LAYOUT.headerHeight + LAYOUT.footerHeight;
 
   // If we're too close to the top of the page, add some spacing to prevent header duplication
