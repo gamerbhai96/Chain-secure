@@ -21,8 +21,9 @@ from sklearn.metrics import (
 )
 from sklearn.linear_model import LogisticRegression
 import xgboost as xgb
-from imblearn.over_sampling import SMOTE
-from imblearn.under_sampling import RandomUnderSampler
+# Temporarily disabled due to compatibility issues with scikit-learn 1.8.0
+# from imblearn.over_sampling import SMOTE
+# from imblearn.under_sampling import RandomUnderSampler
 
 # Try to import enhanced fraud detector
 try:
@@ -994,9 +995,12 @@ class FraudDetector:
             X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
         )
         
-        # Enhanced class balancing with SMOTE
-        smote = SMOTE(random_state=42, k_neighbors=3)
-        X_train_balanced, y_train_balanced = smote.fit_resample(X_train_split, y_train_split)
+        # Temporarily disabled SMOTE due to compatibility issues
+        # smote = SMOTE(random_state=42, k_neighbors=3)
+        # X_train_balanced, y_train_balanced = smote.fit_resample(X_train_split, y_train_split)
+        
+        # Use original data without resampling
+        X_train_balanced, y_train_balanced = X_train_split, y_train_split
         
         training_results = {}
         

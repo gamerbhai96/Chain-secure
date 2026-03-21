@@ -1,4 +1,4 @@
-// Wallet time-series types for BitScan charts
+// Wallet time-series types for ChainSecure charts
 export interface WalletTimeSeriesPoint {
   date: string;
   received_btc: number;

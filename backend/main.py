@@ -38,20 +38,24 @@ app = FastAPI(
 from fastapi.middleware.cors import CORSMiddleware
 
 # List all allowed frontend URLs
-allowed_origins = [
-    "https://test-bitscan.vercel.app",
-    "https://www.test-bitscan.vercel.app",
-    "https://test-bitscan-dz2g22t91-nagbhushan-hegdes-projects.vercel.app",
-    "http://localhost:5173",
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,   # exact match only
-    allow_credentials=True,          # needed if sending cookies or auth headers
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # explicit methods
-    allow_headers=["Authorization", "Content-Type"],            # explicit headers
+    allow_origins=[
+        "https://bitscan.netlify.app",
+        "https://www.bitscan.netlify.app",
+        "https://test-bitscan.vercel.app",
+        "https://www.test-bitscan.vercel.app",
+        "https://bitscan.netlify.app/",
+        "bitscan.netlify.app",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],   # allows all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],   # allows all custom headers
 )
+
+
 
 
 # Include API routes BEFORE static file mounts

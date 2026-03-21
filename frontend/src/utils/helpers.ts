@@ -102,7 +102,7 @@ export const formatTimestamp = (timestamp: string): string => {
   try {
     const date = new Date(timestamp);
     return date.toLocaleString();
-  } catch (error) {
+  } catch {
     return timestamp;
   }
 };
@@ -110,15 +110,17 @@ export const formatTimestamp = (timestamp: string): string => {
 /**
  * Debounce function for performance optimization
  */
-export const debounce = <T extends (...args: any[]) => any>(
+export const debounce = <T extends (...args: unknown[]) => unknown>(
   func: T,
   delay: number
 ): ((...args: Parameters<T>) => void) => {
-  let timeoutId: number;
+  let timeoutId: number | undefined;
   
   return (...args: Parameters<T>) => {
-    clearTimeout(timeoutId);
-    timeoutId = window.setTimeout(() => func(...args), delay);
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(() => {
+      func(...args);
+    }, delay);
   };
 };
 

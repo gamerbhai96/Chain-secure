@@ -264,8 +264,8 @@ class EllipticDatasetLoader:
                 filtered_data = data[data['class'].isin([1, 2])].copy()
                 filtered_data['binary_class'] = filtered_data['class'].map({1: 1, 2: 0})
             
-            print(f"📊 Filtered data shape: {filtered_data.shape}")
-            print(f"📊 Class distribution after filtering:")
+            print(f" Filtered data shape: {filtered_data.shape}")
+            print(f" Class distribution after filtering:")
             print(filtered_data['binary_class'].value_counts())
             
             # Extract features and labels
@@ -277,21 +277,25 @@ class EllipticDatasetLoader:
             
             # Balance classes if requested
             if balance_classes and not include_unknown:
-                from imblearn.under_sampling import RandomUnderSampler
-                from imblearn.over_sampling import SMOTE
-                
-                # First, undersample the majority class
-                undersampler = RandomUnderSampler(random_state=42)
-                X_balanced, y_balanced = undersampler.fit_resample(X, y)
-                
-                # Then oversample the minority class
-                smote = SMOTE(random_state=42)
-                X_final, y_final = smote.fit_resample(X_balanced, y_balanced)
-                
-                print(f"📊 Balanced data shape: {X_final.shape}")
-                print(f"📊 Balanced class distribution: {np.bincount(y_final)}")
-                
-                return X_final, y_final, feature_columns
+                try:
+                    from imblearn.under_sampling import RandomUnderSampler
+                    from imblearn.over_sampling import SMOTE
+                    
+                    # First, undersample the majority class
+                    undersampler = RandomUnderSampler(random_state=42)
+                    X_balanced, y_balanced = undersampler.fit_resample(X, y)
+                    
+                    # Then oversample the minority class
+                    smote = SMOTE(random_state=42)
+                    X_final, y_final = smote.fit_resample(X_balanced, y_balanced)
+                    
+                    print(f" Balanced data shape: {X_final.shape}")
+                    print(f" Balanced class distribution: {np.bincount(y_final)}")
+                    
+                    return X_final, y_final, feature_columns
+                except ImportError:
+                    print("  imbalanced-learn not available, skipping class balancing")
+                    # Fall through to return unbalanced data
             
             return X, y, feature_columns
             

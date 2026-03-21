@@ -1,452 +1,170 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FC } from 'react';
-import { Box, Typography, CircularProgress, Paper } from '@mui/material';
-import { 
-  ResponsiveContainer, 
-  XAxis, 
-  YAxis, 
-  Tooltip as RechartsTooltip, 
-  CartesianGrid, 
-  Area, 
-  Legend, 
-  AreaChart
-} from 'recharts';
-import { BitScanAPI } from '../services/api';
+import { Box, Typography, Skeleton } from '@mui/material';
+import { ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, Area, Legend, AreaChart } from 'recharts';
+import ChainSecureAPI from '../services/api';
 
 type Granularity = 'day' | 'week' | 'month' | 'year';
 
-interface WalletTimeSeriesPoint {
-  date: string;
-  received_btc: number;
-  sent_btc: number;
-  cumulative_balance_btc: number;
-  formattedDate?: string;
-}
+type TooltipItem = {
+    name?: string;
+    value?: number | string;
+    color?: string;
+};
 
-interface WalletTimeSeriesResponse {
-  points: WalletTimeSeriesPoint[];
-  summary?: {
-    total_received_btc: number;
-    total_sent_btc: number;
-    net_change_btc: number;
-  };
-}
+type TooltipProps = {
+    active?: boolean;
+    payload?: TooltipItem[];
+    label?: string;
+};
 
-interface CustomTooltipProps {
-  active?: boolean;
-  payload?: Array<{
-    name: string;
-    value: number | string;
-    color: string;
-    payload: any;
-  }>;
-  label?: string;
-  dark?: boolean;
-}
+type TimeSeriesPoint = {
+    date: string;
+    received_btc?: number;
+    sent_btc?: number;
+    cumulative_balance_btc?: number;
+};
+
+type TimeSeriesResponse = {
+    points?: TimeSeriesPoint[];
+    summary?: {
+        total_received_btc: number;
+        total_sent_btc: number;
+        net_change_btc: number;
+    };
+};
 
 interface Props {
-  address: string;
-  defaultDays?: number;
-  defaultGranularity?: Granularity;
-  dark?: boolean;
+    address: string;
+    defaultDays?: number;
+    defaultGranularity?: Granularity;
+    dark?: boolean;
 }
 
-type TooltipItem = {
-  name: string;
-  value: number | string;
-  color: string;
-  payload: any;
-};
-
-const CustomTooltip: FC<CustomTooltipProps> = ({
-  active,
-  payload,
-  label,
-  dark = false
-}) => {
-  if (active && payload && payload.length) {
-    return (
-      <Box sx={{ 
-        p: 1, 
-        backgroundColor: dark ? '#1e1e1e' : '#fff',
-        border: `1px solid ${dark ? '#333' : '#ddd'}`,
-        boxShadow: '0px 2px 4px rgba(0,0,0,0.1)'
-      }}>
-        <Typography variant="subtitle2" sx={{ mb: 1, color: dark ? '#fff' : '#333' }}>
-          {String(label)}
-        </Typography>
-        {payload.map((item: TooltipItem, index: number) => (
-          <Box key={`tooltip-item-${index}`} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
-            <Typography variant="body2" sx={{ color: item.color }}>
-              {item.name}:
-            </Typography>
-            <Typography variant="body2" sx={{ color: dark ? '#fff' : '#333' }}>
-              {Number(item.value).toFixed(8)} BTC
-            </Typography>
-          </Box>
-        ))}
-      </Box>
-    );
-  }
-  return null;
-};
-
-const WalletCredibilityChart: FC<Props> = ({ 
-  address, 
-  defaultDays = 90, 
-  defaultGranularity = 'week', 
-  dark = false 
-}) => {
-  // State management
-  const [timeframe, setTimeframe] = useState<{
-    days: number;
-    granularity: Granularity;
-  }>({ 
-    days: defaultDays, 
-    granularity: defaultGranularity 
-  });
-
-  const [data, setData] = useState<WalletTimeSeriesResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [activePreset, setActivePreset] = useState<string>('90d');
-
-  // Calculate optimal granularity based on time range
-  const getOptimalGranularity = (days: number): Granularity => {
-    if (days <= 90) return 'week';  // 30d and 90d use weekly
-    if (days <= 180) return 'month'; // 6m uses monthly
-    return 'month';
-  };
-
-  // Apply preset with optimal granularity
-  const applyPreset = (key: string) => {
-    let days: number;
-    switch (key) {
-      case '30d': days = 30; break;
-      case '90d': days = 90; break;
-      case '6m': days = 180; break;
-      case '1y': days = 365; break;
-      default: days = 90;
-    }
-    
-    const granularity = getOptimalGranularity(days);
-    setTimeframe({ days, granularity });
-    setActivePreset(key);
-  };
-
-  // Memoize the processed chart data
-  const chartData = useMemo(() => {
-    if (!data?.points?.length) return [];
-    
-    // Ensure data is sorted by date
-    const sorted = [...data.points].sort((a, b) => 
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-
-    // Process data points for consistent display
-    return sorted.map(point => {
-      const dateObj = new Date(point.date);
-      const isValidDate = !isNaN(dateObj.getTime());
-      
-      return {
-        ...point,
-        // Ensure numeric values
-        received_btc: Number(point.received_btc) || 0,
-        sent_btc: Number(point.sent_btc) || 0,
-        cumulative_balance_btc: Number(point.cumulative_balance_btc) || 0,
-        // Format date based on granularity with validation
-        formattedDate: isValidDate 
-          ? dateObj.toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: timeframe.granularity === 'month' ? 'short' : 'numeric',
-              day: timeframe.granularity === 'day' ? 'numeric' : undefined,
-            })
-          : point.date
-      };
-    });
-  }, [data, timeframe.granularity]);
-  
-  // Limit displayed data points to prevent scrolling
-  const displayData = useMemo(() => {
-    if (!chartData.length) return [];
-    const maxPoints = timeframe.granularity === 'week' ? 16 : 12;
-    return chartData.slice(-maxPoints);
-  }, [chartData, timeframe.granularity]);
-
-  // Fetch data when address or timeframe changes
-  useEffect(() => {
-    let mounted = true;
-    const controller = new AbortController();
-
-    const loadData = async () => {
-      if (!address) return;
-      
-      setLoading(true);
-      setError(null);
-      
-      try {
-        const res = await BitScanAPI.getWalletTimeSeries(
-          address, 
-          timeframe.days, 
-          timeframe.granularity
+const CustomTooltip: FC<TooltipProps> = ({ active, payload, label }) => {
+    if (active && payload?.length) {
+        return (
+            <Box sx={{
+                p: 2, background: 'rgba(10, 15, 26, 0.95)', border: '1px solid rgba(59, 130, 246, 0.3)',
+                borderRadius: 2, boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)', backdropFilter: 'blur(12px)',
+            }}>
+                <Typography sx={{ mb: 1.5, color: '#f8fafc', fontWeight: 600, fontSize: '0.85rem', fontFamily: '"Space Grotesk", sans-serif', borderBottom: '1px solid rgba(59, 130, 246, 0.2)', pb: 1 }}>{label}</Typography>
+                {payload.map((item, i: number) => (
+                    <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', gap: 3, py: 0.25 }}>
+                        <Typography sx={{ color: item.color, fontWeight: 500, fontSize: '0.8rem' }}>{item.name}:</Typography>
+                        <Typography sx={{ color: '#f8fafc', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.8rem', textShadow: `0 0 10px ${item.color}40` }}>{Number(item.value ?? 0).toFixed(8)} BTC</Typography>
+                    </Box>
+                ))}
+            </Box>
         );
-        
-        if (mounted) {
-          setData(res);
-        }
-      } catch (error: any) {
-        if (error.name !== 'AbortError' && mounted) {
-          console.error('Error loading time series:', error);
-          setError(error?.message || 'Failed to load time series data');
-        }
-      } finally {
-        if (mounted) setLoading(false);
-      }
+    }
+    return null;
+};
+
+const TimeframeBtn: FC<{ label: string; active: boolean; onClick: () => void }> = ({ label, active, onClick }) => (
+    <Box onClick={onClick} sx={{
+        px: 2, py: 0.75, borderRadius: 2, cursor: 'pointer', fontFamily: '"Space Grotesk", sans-serif', fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.25s ease',
+        background: active ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+        color: active ? '#3b82f6' : 'rgba(248, 250, 252, 0.5)',
+        border: active ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
+        boxShadow: active ? '0 0 15px rgba(59, 130, 246, 0.2)' : 'none',
+        '&:hover': { background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' },
+    }}>{label}</Box>
+);
+
+const WalletCredibilityChart: FC<Props> = ({ address, defaultDays = 90, defaultGranularity = 'week', dark = true }) => {
+    const [timeframe, setTimeframe] = useState({ days: defaultDays, granularity: defaultGranularity as Granularity });
+    const [data, setData] = useState<TimeSeriesResponse | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [activePreset, setActivePreset] = useState('90d');
+
+    const applyPreset = (key: string) => {
+        const days = key === '30d' ? 30 : key === '90d' ? 90 : key === '6m' ? 180 : 365;
+        setTimeframe({ days, granularity: days <= 90 ? 'week' : 'month' });
+        setActivePreset(key);
     };
 
-    loadData();
-    
-    // Cleanup function to cancel pending requests
-    return () => {
-      mounted = false;
-      controller.abort();
+    const chartData = useMemo(() => {
+        if (!data?.points?.length) return [];
+        return [...data.points]
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+            .map((p) => ({ ...p, formattedDate: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }));
+    }, [data]);
+
+    const displayData = useMemo(() => chartData.slice(-16), [chartData]);
+
+    useEffect(() => {
+        let mounted = true;
+        const loadData = async () => {
+            if (!address) return;
+            setLoading(true);
+            try {
+                const res = await ChainSecureAPI.getWalletTimeSeries(address, timeframe.days, timeframe.granularity);
+                if (mounted) setData(res as TimeSeriesResponse);
+            }
+            catch (e: unknown) {
+                if (!mounted) return;
+                if (e instanceof Error) setError(e.message);
+                else setError('Failed');
+            }
+            finally { if (mounted) setLoading(false); }
+        };
+        loadData();
+        return () => { mounted = false; };
+    }, [address, timeframe]);
+
+    const containerStyle = {
+        p: 3,
+        borderRadius: 4,
+        background: dark ? 'rgba(10, 15, 26, 0.8)' : 'rgba(255, 255, 255, 0.9)',
+        backdropFilter: 'blur(20px)',
+        border: dark ? '1px solid rgba(59, 130, 246, 0.1)' : '1px solid rgba(59, 130, 246, 0.25)',
+        boxShadow: '0 8px 40px rgba(0, 0, 0, 0.4)'
     };
-  }, [address, timeframe.days, timeframe.granularity]);
 
-  // Render loading and error states
-  if (loading) {
+    if (loading) return <Box sx={containerStyle}><Skeleton variant="text" width={180} height={28} sx={{ bgcolor: 'rgba(59, 130, 246, 0.1)', mb: 2 }} /><Skeleton variant="rounded" height={280} sx={{ borderRadius: 3, bgcolor: 'rgba(59, 130, 246, 0.06)' }} /></Box>;
+    if (error || !chartData.length) return <Box sx={{ ...containerStyle, textAlign: 'center', py: 6 }}><Typography sx={{ color: 'rgba(248, 250, 252, 0.5)' }}>{error || 'No data'}</Typography></Box>;
+
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+        <Box sx={containerStyle}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Typography sx={{ fontWeight: 700, fontSize: '1.1rem', fontFamily: '"Space Grotesk", sans-serif', color: '#f8fafc' }}>📊 Balance History</Typography>
+                <Box sx={{ display: 'flex', gap: 0.75 }}>{['30d', '90d', '6m', '1y'].map(p => <TimeframeBtn key={p} label={p} active={activePreset === p} onClick={() => applyPreset(p)} />)}</Box>
+            </Box>
 
-  if (error) {
-    return (
-      <Box sx={{ p: 3, textAlign: 'center', color: 'error.main' }}>
-        <Typography>Error loading chart data: {error}</Typography>
-      </Box>
-    );
-  }
+            {data?.summary && (
+                <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                    {[{ label: 'Received', value: data.summary.total_received_btc, color: '#22c55e' }, { label: 'Sent', value: data.summary.total_sent_btc, color: '#ef4444' }, { label: 'Net', value: data.summary.net_change_btc, color: '#3b82f6' }].map((s, i) => (
+                        <Box key={i} sx={{ flex: 1, p: 2, borderRadius: 3, background: 'rgba(10, 15, 26, 0.6)', border: `1px solid ${s.color}20` }}>
+                            <Typography sx={{ fontSize: '0.75rem', color: 'rgba(248, 250, 252, 0.5)', mb: 0.5 }}>{s.label}</Typography>
+                            <Typography sx={{ fontWeight: 700, color: s.color, fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.95rem', textShadow: `0 0 15px ${s.color}40` }}>{i === 2 && s.value >= 0 ? '+' : ''}{s.value.toFixed(8)} BTC</Typography>
+                        </Box>
+                    ))}
+                </Box>
+            )}
 
-  if (!chartData.length) {
-    return (
-      <Box sx={{ p: 3, textAlign: 'center' }}>
-        <Typography>No data available for the selected time range</Typography>
-      </Box>
-    );
-  }
-
-  return (
-    <Box sx={{ width: '100%' }}>
-      {/* Timeframe selector */}
-      <Box sx={{ display: 'flex', gap: 1, mb: 2, overflowX: 'auto', pb: 1 }}>
-        {['30d', '90d', '6m', '1y'].map((preset) => (
-          <Paper
-            key={preset}
-            elevation={0}
-            onClick={() => applyPreset(preset)}
-            sx={{
-              px: 2,
-              py: 1,
-              borderRadius: 1,
-              cursor: 'pointer',
-              backgroundColor: activePreset === preset 
-                ? (dark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.1)')
-                : (dark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'),
-              color: activePreset === preset 
-                ? (dark ? '#818cf8' : '#4f46e5')
-                : (dark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'),
-              border: `1px solid ${activePreset === preset 
-                ? (dark ? 'rgba(99, 102, 241, 0.5)' : 'rgba(99, 102, 241, 0.3)') 
-                : (dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)')}`,
-              '&:hover': {
-                backgroundColor: dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
-              },
-              whiteSpace: 'nowrap',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-              transition: 'all 0.2s',
-            }}
-          >
-            {preset}
-          </Paper>
-        ))}
-      </Box>
-
-      {/* Stats summary - Compact */}
-      {data?.summary && (
-        <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
-          <Paper elevation={0} sx={{ 
-            p: 1.5, 
-            flex: 1, 
-            minWidth: 140, 
-            borderRadius: 1.5, 
-            border: '1px solid', 
-            borderColor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' 
-          }}>
-            <Typography variant="caption" sx={{ opacity: 0.6, fontSize: '0.7rem' }}>Received</Typography>
-            <Typography variant="body1" sx={{ fontWeight: 600, color: '#10b981', fontSize: '0.95rem' }}>{(data.summary.total_received_btc || 0).toFixed(8)} BTC</Typography>
-          </Paper>
-          <Paper elevation={0} sx={{ 
-            p: 1.5, 
-            flex: 1, 
-            minWidth: 140, 
-            borderRadius: 1.5, 
-            border: '1px solid', 
-            borderColor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' 
-          }}>
-            <Typography variant="caption" sx={{ opacity: 0.6, fontSize: '0.7rem' }}>Sent</Typography>
-            <Typography variant="body1" sx={{ fontWeight: 600, color: '#ef4444', fontSize: '0.95rem' }}>{(data.summary.total_sent_btc || 0).toFixed(8)} BTC</Typography>
-          </Paper>
-          <Paper elevation={0} sx={{ 
-            p: 1.5, 
-            flex: 1, 
-            minWidth: 140, 
-            borderRadius: 1.5, 
-            border: '1px solid', 
-            borderColor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' 
-          }}>
-            <Typography variant="caption" sx={{ opacity: 0.6, fontSize: '0.7rem' }}>Net Change</Typography>
-            <Typography 
-              variant="body1" 
-              sx={{ 
-                fontWeight: 600, 
-                fontSize: '0.95rem',
-                color: (data.summary.net_change_btc || 0) >= 0 ? '#10b981' : '#ef4444' 
-              }}
-            >
-              {(data.summary.net_change_btc || 0) >= 0 ? '+' : ''}{(data.summary.net_change_btc || 0).toFixed(8)} BTC
-            </Typography>
-          </Paper>
+            <Box sx={{ height: 300, borderRadius: 3, background: 'rgba(2, 6, 23, 0.4)', p: 2 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={displayData} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+                        <defs>
+                            <linearGradient id="gRecv" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22c55e" stopOpacity={0.4} /><stop offset="95%" stopColor="#22c55e" stopOpacity={0} /></linearGradient>
+                            <linearGradient id="gSent" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.4} /><stop offset="95%" stopColor="#ef4444" stopOpacity={0} /></linearGradient>
+                            <linearGradient id="gBal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.5} /><stop offset="95%" stopColor="#3b82f6" stopOpacity={0} /></linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(59, 130, 246, 0.08)" />
+                        <XAxis dataKey="formattedDate" tick={{ fontSize: 11, fill: 'rgba(248, 250, 252, 0.5)' }} axisLine={{ stroke: 'rgba(59, 130, 246, 0.15)' }} tickLine={false} />
+                        <YAxis tickFormatter={v => v.toFixed(4)} tick={{ fontSize: 11, fill: 'rgba(248, 250, 252, 0.5)' }} width={65} axisLine={{ stroke: 'rgba(59, 130, 246, 0.15)' }} tickLine={false} />
+                        <RechartsTooltip content={({ active, payload, label }) => <CustomTooltip active={active} payload={payload as TooltipItem[] | undefined} label={String(label ?? '')} />} />
+                        <Legend wrapperStyle={{ paddingTop: 16, fontSize: 12 }} iconType="circle" iconSize={8} />
+                        <Area type="monotone" dataKey="received_btc" name="Received" stroke="#22c55e" fill="url(#gRecv)" strokeWidth={2} />
+                        <Area type="monotone" dataKey="sent_btc" name="Sent" stroke="#ef4444" fill="url(#gSent)" strokeWidth={2} />
+                        <Area type="monotone" dataKey="cumulative_balance_btc" name="Balance" stroke="#3b82f6" fill="url(#gBal)" strokeWidth={2.5} />
+                    </AreaChart>
+                </ResponsiveContainer>
+            </Box>
         </Box>
-      )}
-
-      {/* Chart container */}
-      <Box sx={{ width: '100%' }}>
-        <Box sx={{ height: 300 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart 
-              data={displayData} 
-              margin={{ top: 10, right: 20, bottom: 10, left: 0 }}
-            >
-              <defs>
-                <linearGradient id="colorReceived" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.1} />
-                </linearGradient>
-                <linearGradient id="colorSent" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0.1} />
-                </linearGradient>
-                <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.1} />
-                </linearGradient>
-              </defs>
-              <XAxis 
-                dataKey="formattedDate" 
-                tick={{ 
-                  fontSize: 12,
-                  fill: dark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
-                }}
-                tickCount={Math.min(displayData.length, 12)}
-                minTickGap={20}
-                axisLine={{ stroke: dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }}
-                tickLine={{ stroke: dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }}
-              />
-              <YAxis 
-                tickFormatter={(value) => `${value} BTC`}
-                tick={{ 
-                  fontSize: 12,
-                  fill: dark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
-                }}
-                width={80}
-                axisLine={{ stroke: dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }}
-                tickLine={{ stroke: dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }}
-              />
-              <CartesianGrid 
-                strokeDasharray="3 3" 
-                vertical={false} 
-                stroke={dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'} 
-              />
-              <RechartsTooltip 
-                content={({ active, payload, label }) => (
-                  <CustomTooltip 
-                    active={active}
-                    payload={payload}
-                    label={String(label || '')}
-                    dark={dark}
-                  />
-                )}
-                cursor={{ 
-                  stroke: dark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)',
-                  strokeWidth: 1
-                }}
-                wrapperStyle={{ 
-                  zIndex: 100,
-                  backgroundColor: dark ? '#1e1e1e' : '#fff',
-                  border: `1px solid ${dark ? '#333' : '#ddd'}`,
-                  borderRadius: 4,
-                  padding: '8px 12px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-                }}
-              />
-              <Legend 
-                wrapperStyle={{
-                  paddingTop: '20px',
-                  color: dark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
-                }}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="received_btc" 
-                name="Received BTC" 
-                stroke="#10b981" 
-                fillOpacity={1} 
-                fill="url(#colorReceived)" 
-                activeDot={{ 
-                  r: 6,
-                  stroke: dark ? '#1e1e1e' : '#fff',
-                  strokeWidth: 2
-                }}
-                strokeWidth={2}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="sent_btc" 
-                name="Sent BTC" 
-                stroke="#ef4444" 
-                fillOpacity={1} 
-                fill="url(#colorSent)" 
-                activeDot={{ 
-                  r: 6,
-                  stroke: dark ? '#1e1e1e' : '#fff',
-                  strokeWidth: 2
-                }}
-                strokeWidth={2}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="cumulative_balance_btc" 
-                name="Balance BTC" 
-                stroke="#8b5cf6" 
-                fillOpacity={0.3} 
-                fill="url(#colorBalance)" 
-                activeDot={{ 
-                  r: 6,
-                  stroke: dark ? '#1e1e1e' : '#fff',
-                  strokeWidth: 2
-                }}
-                strokeWidth={2}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Box>
-      </Box>
-    </Box>
-  );
+    );
 };
 
 export default WalletCredibilityChart;
