@@ -5,15 +5,11 @@ import type { Theme } from '@mui/material/styles';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import {
   FileDownloadOutlined as DownloadIcon,
-  VisibilityOutlined as ViewIcon,
-  Analytics as AnalyticsIcon,
   CheckCircleOutline as CheckIcon,
   WarningAmber as WarnIcon,
   ArrowBack as ArrowBackIcon
 } from '@mui/icons-material';
-import WalletCredibilityChart from '../components/WalletCredibilityChart';
-import InflowOutflowChart from '../components/InflowOutflowChart';
-import { downloadPdfReportWithCharts } from '../utils/reportGenerator';
+import { downloadPdfReport } from '../utils/reportGenerator';
 import type { AnalysisResponse } from '../types/api';
 import ChainSecureAPI from '../services/api';
 
@@ -34,24 +30,13 @@ const StatCard = styled(Card)<{ theme?: Theme }>(({ theme }) => ({
   },
 }));
 
-const ChartCard = styled(Card)<{ theme?: Theme }>(({ theme }) => ({
-  padding: theme?.spacing(3) || 24,
-  borderRadius: typeof theme?.shape?.borderRadius === 'number' ? theme.shape.borderRadius * 1.5 : 8,
-  background: theme?.palette?.background?.paper,
-  border: '1px solid ' + theme?.palette?.divider,
-  transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-  height: '100%',
-  boxShadow: theme?.shadows?.[1],
-  '&:hover': {
-    boxShadow: theme?.shadows?.[2],
-  },
-}));
+
 
 interface ReportProps {
   isDarkMode: boolean;
 }
 
-export const Report: React.FC<ReportProps> = ({ isDarkMode }) => {
+export const Report: React.FC<ReportProps> = () => {
   const { state } = useLocation();
   const { address } = useParams<{ address: string }>();
   const navigate = useNavigate();
@@ -59,7 +44,6 @@ export const Report: React.FC<ReportProps> = ({ isDarkMode }) => {
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(state?.analysis || null);
   const [loading, setLoading] = useState(!state?.analysis);
   const [error, setError] = useState<string | null>(null);
-  const [showCharts, setShowCharts] = useState(true);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
@@ -90,10 +74,7 @@ export const Report: React.FC<ReportProps> = ({ isDarkMode }) => {
     return summary.transaction_count === 0 && summary.total_received_btc === 0 && summary.total_sent_btc === 0;
   }, [analysis]);
 
-  useEffect(() => {
-    if (isEmptyWallet) setShowCharts(false);
-    else if (analysis) setShowCharts(true);
-  }, [isEmptyWallet, analysis]);
+  // Charts logic removed
 
   const getRiskColor = (level: string) => {
     const map: Record<string, string> = {
@@ -207,18 +188,11 @@ export const Report: React.FC<ReportProps> = ({ isDarkMode }) => {
           {!isEmptyWallet && (
             <Box sx={{ mb: 4, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               <Button
-                variant="outlined" size="large" onClick={() => setShowCharts(!showCharts)} startIcon={showCharts ? <ViewIcon /> : <AnalyticsIcon />}
-                sx={{ borderRadius: 3, px: 3, py: 1.5, fontWeight: 600 }}
-              >
-                {showCharts ? 'Hide Charts' : 'View Charts'}
-              </Button>
-              <Button
                 variant="outlined" size="large" disabled={generatingPdf} startIcon={<DownloadIcon />}
                 onClick={async () => {
                   setGeneratingPdf(true);
                   try {
-                    await new Promise(r => setTimeout(r, 5000));
-                    await downloadPdfReportWithCharts(analysis, analysis.address!);
+                    await downloadPdfReport(analysis, analysis.address!);
                   } finally {
                     setGeneratingPdf(false);
                   }
@@ -227,34 +201,6 @@ export const Report: React.FC<ReportProps> = ({ isDarkMode }) => {
               >
                 {generatingPdf ? 'Generating...' : 'Export PDF'}
               </Button>
-            </Box>
-          )}
-
-          {/* Hidden charts for PDF */}
-          {!isEmptyWallet && analysis.address && (
-            <Box sx={{ position: 'absolute', left: '-9999px', opacity: 0 }}>
-              <Box data-chart="balance-history" sx={{ background: '#fff' }}>
-                <WalletCredibilityChart address={analysis.address} defaultDays={90} defaultGranularity="week" dark={false} />
-              </Box>
-              <Box data-chart="inflow-outflow" sx={{ background: '#fff' }}>
-                <InflowOutflowChart address={analysis.address} defaultDays={90} defaultGranularity="week" dark={false} />
-              </Box>
-            </Box>
-          )}
-
-          {/* Charts Section */}
-          {!isEmptyWallet && showCharts && (
-            <Box sx={{ mb: 4 }}>
-              <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
-                <ChartCard sx={{ flex: 1 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 3, color: 'text.primary' }}>Wallet Credibility</Typography>
-                  <WalletCredibilityChart address={analysis.address!} defaultDays={90} defaultGranularity="week" dark={isDarkMode} />
-                </ChartCard>
-                <ChartCard sx={{ flex: 1 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 3, color: 'text.primary' }}>Transaction Flow</Typography>
-                  <InflowOutflowChart address={analysis.address!} defaultDays={90} defaultGranularity="week" dark={isDarkMode} />
-                </ChartCard>
-              </Box>
             </Box>
           )}
 

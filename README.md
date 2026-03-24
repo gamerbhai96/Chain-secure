@@ -1,10 +1,10 @@
-# BitTrace - Bitcoin Fraud Detection Platform
+# SecureChain - Bitcoin Fraud Detection Platform
 
 A modern, AI-powered Bitcoin wallet risk analysis tool with real-time blockchain analytics and an elegant analyst dashboard.
 
 ## 🔍 Overview
 
-BitTrace is a full-stack Bitcoin fraud intelligence platform combining FastAPI microservices with a sleek React dashboard. The system ingests on-chain data, applies ensemble machine-learning models, and surfaces real-time risk signals so compliance teams can investigate wallets, export evidence packs, and share findings within minutes.
+SecureChain is a full-stack Bitcoin fraud intelligence platform combining FastAPI microservices with a sleek React dashboard. The system ingests on-chain data, applies ensemble machine-learning models, and surfaces real-time risk signals so compliance teams can investigate wallets, export evidence packs, and share findings within minutes.
 
 ## 🚀 Key Features
 
@@ -168,4 +168,4 @@ cd frontend && npm run build
 
 ---
 
-**⚠️ Disclaimer**: BitTrace is for analysis and education purposes. Always conduct your own research before making cryptocurrency decisions.
+**⚠️ Disclaimer**: SecureChain is for analysis and education purposes. Always conduct your own research before making cryptocurrency decisions.

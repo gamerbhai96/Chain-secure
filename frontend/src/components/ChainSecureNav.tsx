@@ -46,28 +46,6 @@ interface StyleProps {
   isDark: boolean;
 }
 
-const LogoMark = styled(Box)<StyleProps>(() => ({
-  width: 40,
-  height: 40,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: tokens.borderRadius.md,
-  background: tokens.colors.primary,
-  boxShadow: tokens.shadows.sm,
-  transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-  '&:hover': {
-    boxShadow: tokens.shadows.md,
-  },
-}));
-
-const LogoIcon = styled(Typography)(() => ({
-  fontFamily: tokens.typography.display,
-  fontStyle: 'normal',
-  fontSize: '1rem',
-  fontWeight: 700,
-  color: '#ffffff',
-}));
 
 const LogoText = styled(Typography)<StyleProps>(({ theme }) => ({
   fontFamily: tokens.typography.display,
@@ -137,9 +115,7 @@ export const ChainSecureNav: React.FC<NavProps> = ({
     <NavBar position="fixed" elevation={0}>
       <NavInner>
         <LogoArea onClick={() => navigate('/')} sx={{ cursor: 'pointer' }}>
-        <LogoMark isDark={isDarkMode}>
-          <LogoIcon>CS</LogoIcon>
-        </LogoMark>
+        <Box component="img" src="/logo.png" alt="SecureChain Logo" sx={{ width: 40, height: 40, objectFit: 'contain' }} />
         <LogoText isDark={isDarkMode}>ChainSecure</LogoText>
       </LogoArea>
 
