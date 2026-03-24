@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://bitscanbe.securedapp.io/api/v1/:path*"
+      "destination": "https://bitscan-app.onrender.com/api/v1/:path*"
     }
   ]
 }
