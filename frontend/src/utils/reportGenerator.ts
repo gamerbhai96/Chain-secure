@@ -1,16 +1,7 @@
 import type { AnalysisResponse } from '../types/api';
 import { utils, writeFile } from 'xlsx';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-
-type AutoTableDoc = jsPDF & {
-  autoTable: (options: unknown) => void;
-  lastAutoTable?: {
-    finalY?: number;
-  };
-};
-
-const asAutoTableDoc = (doc: jsPDF): AutoTableDoc => doc as unknown as AutoTableDoc;
+import autoTable from 'jspdf-autotable';
 
 const readFraudSignalFlags = (analysis: AnalysisResponse): unknown[] => {
   const detailed = analysis.detailed_analysis;
@@ -29,7 +20,7 @@ const readFraudSignalFlags = (analysis: AnalysisResponse): unknown[] => {
 /**
  * Editorial color palette for ChainSecure reports
  */
-const REPORT_COLORS = {
+const REPORT_COLORS: Record<string, [number, number, number]> = {
   primary: [26, 26, 26],        // Ink dark #1a1a1a
   secondary: [196, 93, 62],     // Terracotta accent #c45d3e
   success: [61, 124, 71],       // Forest green #3d7c47
@@ -40,7 +31,7 @@ const REPORT_COLORS = {
   white: [255, 255, 255],
   dark: [26, 26, 26],           // Ink #1a1a1a
   accent: [196, 93, 62]         // Terracotta #c45d3e
-} as const;
+};
 
 /**
  * Layout constants
@@ -68,7 +59,10 @@ const initProfessionalDocument = (): jsPDF => {
 const addChainSecureLogo = async (doc: jsPDF, x: number, y: number, width: number, height: number): Promise<void> => {
   try {
     // Use the local PNG logo
-    const response = await fetch('/logo copy.png');
+    const response = await fetch('/logo.png');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const contentType = response.headers.get('content-type');
+    if (contentType && !contentType.includes('image')) throw new Error(`Invalid content type: ${contentType}`);
     const blob = await response.blob();
 
     // Convert blob to base64
@@ -529,7 +523,7 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
       factor
     ]);
 
-    asAutoTableDoc(doc).autoTable({
+    autoTable(doc, {
       startY: currentY,
       head: [['#', 'Identified Risk Factor']],
       body: riskTableData,
@@ -554,7 +548,7 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
       tableLineWidth: 0.3
     });
 
-    currentY = ((asAutoTableDoc(doc).lastAutoTable?.finalY ?? currentY) + 15);
+    currentY = (((doc as any).lastAutoTable?.finalY) ?? currentY) + 15;
   } else {
     currentY = drawSectionHeader(doc, 'Risk Intelligence Assessment', currentY);
     doc.setFontSize(10);
@@ -582,7 +576,7 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
       indicator
     ]);
 
-    asAutoTableDoc(doc).autoTable({
+    autoTable(doc, {
       startY: currentY,
       head: [['#', 'Positive Indicator']],
       body: positiveTableData,
@@ -607,7 +601,7 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
       }
     });
 
-    currentY = ((asAutoTableDoc(doc).lastAutoTable?.finalY ?? currentY) + 15);
+    currentY = (((doc as any).lastAutoTable?.finalY) ?? currentY) + 15;
   }
 
   // Data Quality & Limitations Section
@@ -622,7 +616,7 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
       ['Recommendation', analysis.data_limitations.recommendation || 'N/A']
     ];
 
-    asAutoTableDoc(doc).autoTable({
+    autoTable(doc, {
       startY: currentY,
       head: [['Assessment', 'Status/Details']],
       body: limitationsTableData,
@@ -644,7 +638,7 @@ export const downloadPdfReport = async (analysis: AnalysisResponse, address: str
       tableLineWidth: 0.3
     });
 
-    currentY = ((asAutoTableDoc(doc).lastAutoTable?.finalY ?? currentY) + 10);
+    currentY = (((doc as any).lastAutoTable?.finalY) ?? currentY) + 10;
   }
 
   // Add footer to all pages

@@ -115,7 +115,7 @@ export const ChainSecureNav: React.FC<NavProps> = ({
     <NavBar position="fixed" elevation={0}>
       <NavInner>
         <LogoArea onClick={() => navigate('/')} sx={{ cursor: 'pointer' }}>
-        <Box component="img" src="/logo.png" alt="SecureChain Logo" sx={{ width: 40, height: 40, objectFit: 'contain' }} />
+        <Box component="img" src="/logo.png" alt="ChainSecure Logo" sx={{ width: 40, height: 40, objectFit: 'contain' }} />
         <LogoText isDark={isDarkMode}>ChainSecure</LogoText>
       </LogoArea>
 

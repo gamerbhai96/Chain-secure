@@ -1,10 +1,10 @@
-# SecureChain - Bitcoin Fraud Detection Platform
+# ChainSecure - Bitcoin Fraud Detection Platform
 
 A modern, AI-powered Bitcoin wallet risk analysis tool with real-time blockchain analytics and an elegant analyst dashboard.
 
 ## 🔍 Overview
 
-SecureChain is a full-stack Bitcoin fraud intelligence platform combining FastAPI microservices with a sleek React dashboard. The system ingests on-chain data, applies ensemble machine-learning models, and surfaces real-time risk signals so compliance teams can investigate wallets, export evidence packs, and share findings within minutes.
+ChainSecure is a full-stack Bitcoin fraud intelligence platform combining FastAPI microservices with a sleek React dashboard. The system ingests on-chain data, applies ensemble machine-learning models, and surfaces real-time risk signals so compliance teams can investigate wallets, export evidence packs, and share findings within minutes.
 
 ## 🚀 Key Features
 
@@ -17,13 +17,20 @@ SecureChain is a full-stack Bitcoin fraud intelligence platform combining FastAP
 
 ## 🎨 Design System
 
-BitTrace features a modern, premium UI with:
+ChainSecure features a modern, premium UI with:
 
 - **Color Palette**: Emerald/Teal primary (#10b981) with Electric Violet secondary (#6366f1)
 - **Typography**: Outfit (headings/UI) + IBM Plex Mono (code/numbers)
 - **Components**: Pill-shaped buttons, 24px rounded cards, glassmorphism effects
 - **Themes**: Deep slate dark mode (#030712) and clean white light mode (#f8fafc)
 - **Charts**: Balance history and inflow/outflow visualization with Recharts
+
+## 🗄️ Datasets
+
+The machine learning models are trained and evaluated using standard industry datasets for blockchain anomaly detection:
+
+- **Elliptic Data Set**: A widely used graph dataset of Bitcoin transactions spanning over 200,000 nodes, utilized to identify illicit entities and money laundering activity.
+- **BABD (Bitcoin Address Behavior Dataset)**: A comprehensive dataset used to model Bitcoin address classification, focusing on ransomware, ponzi schemes, and other malicious activities.
 
 ## 🛠️ Technology Stack
 
@@ -168,4 +175,4 @@ cd frontend && npm run build
 
 ---
 
-**⚠️ Disclaimer**: SecureChain is for analysis and education purposes. Always conduct your own research before making cryptocurrency decisions.
+**⚠️ Disclaimer**: ChainSecure is for analysis and education purposes. Always conduct your own research before making cryptocurrency decisions.
