@@ -36,10 +36,14 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 import xgboost as xgb
 import lightgbm as lgb
-from imblearn.over_sampling import SMOTE, BorderlineSMOTE, ADASYN
-from imblearn.under_sampling import RandomUnderSampler, EditedNearestNeighbours
-from imblearn.combine import SMOTETomek
-from imblearn.pipeline import Pipeline as ImbPipeline
+# Temporarily disable imbalanced-learn due to compatibility issues with scikit-learn 1.8.0
+# from imblearn.over_sampling import SMOTE, BorderlineSMOTE, ADASYN
+# from imblearn.under_sampling import RandomUnderSampler, EditedNearestNeighbours
+# from imblearn.combine import SMOTETomek
+# from imblearn.pipeline import Pipeline as ImbPipeline
+
+# Fallback: Use regular sklearn pipeline
+from sklearn.pipeline import Pipeline as ImbPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -2548,11 +2552,15 @@ class EnhancedFraudDetector:
         """Apply advanced preprocessing techniques"""
         logger.info("🔧 Applying advanced preprocessing...")
         
-        # Handle class imbalance with SMOTE
-        smote = SMOTETomek(random_state=42)
-        X_resampled, y_resampled = smote.fit_resample(X, y)
+        # Temporarily disabled SMOTE due to compatibility issues
+        # TODO: Re-enable when imbalanced-learn is compatible with scikit-learn 1.8.0
+        # smote = SMOTETomek(random_state=42)
+        # X_resampled, y_resampled = smote.fit_resample(X, y)
         
-        logger.info(f"Resampled data: {len(X)} -> {len(X_resampled)} samples")
+        # For now, return original data without resampling
+        X_resampled, y_resampled = X, y
+        
+        logger.info(f"Data samples: {len(X_resampled)}")
         logger.info(f"Class distribution: {np.bincount(y_resampled)}")
         
         return X_resampled, y_resampled

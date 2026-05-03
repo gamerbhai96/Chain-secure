@@ -1,14 +1,15 @@
 import axios, { type AxiosResponse } from 'axios';
-import type { AnalysisResponse, SystemStats } from '../types/api';
+import type { AnalysisResponse, SystemStats, ModelPerformanceMetrics } from '../types/api';
 import type { WalletTimeSeriesResponse } from '../types/timeseries';
 
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+// Always use same-origin "/api". In development, Vite proxies to the backend. In production (Vercel), rewrites map "/api" to the backend.
+const API_BASE_URL = '/api';
 
 // Detect if we're in production (Vercel) and adjust timeout accordingly
 const isProduction = import.meta.env.PROD;
-const VERCEL_TIMEOUT = 12000; // 12 seconds for Vercel (well under 15s limit)
-const LOCAL_TIMEOUT = 45000; // 45 seconds for localhost
+const VERCEL_TIMEOUT = 90000; // 90 seconds (1.5 minutes) for production
+const LOCAL_TIMEOUT = 90000; // 90 seconds for localhost
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -46,7 +47,7 @@ apiClient.interceptors.response.use(
     throw error;
   }
 );
-export class BitScanAPI {
+export class ChainSecureAPI {
   /**
    * Analyze a Bitcoin address for fraud indicators
    */
@@ -125,9 +126,9 @@ export class BitScanAPI {
   /**
    * Get model performance metrics
    */
-  static async getModelPerformance(): Promise<any> {
+  static async getModelPerformance(): Promise<ModelPerformanceMetrics> {
     try {
-      const response = await apiClient.get('/models/performance');
+      const response = await apiClient.get<ModelPerformanceMetrics>('/models/performance');
       return response.data;
     } catch (error) {
       console.error('Error fetching model performance:', error);
@@ -154,4 +155,4 @@ export class BitScanAPI {
     }
   }
 }
-export default BitScanAPI;
+export default ChainSecureAPI;

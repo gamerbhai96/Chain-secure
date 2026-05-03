@@ -1,69 +1,47 @@
-# React + TypeScript + Vite
+```bash
+cd ../frontend
+npm install
+echo VITE_API_URL=http://localhost:8000/api/v1 > .env
+npm run dev
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-Currently, two official plugins are available:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+fraud wallet addresses
+bc1qf3np0fw4cj5wdzamev8ljvsweujue6wfddf37z
+1MUFNQXPnkxBZeoovnMLCzYM2A3txfFwQ2
+bc1q6f5vqh23gg5xxk8p4arqzdjt8vjlewdvn6et85
+13juKuqwnrwNbUDBRXgvcLbrsRh51QkRAm
+1Gcpk3gmSCZDdihRp3Kc5HAsHoBcNhzXTQ
+bc1qew7dm24ey3w0t5mv8k62v0z3m4dpvyrv6094nt
+bc1q9jmncqsaf4xtfcvq46lqau7arvmyha0fp8e4yx
+1BdvyjaTB32weSWPZPybChbyz18kcEij7p
+bc1q64z9qw0w3zufwmmk07xnpjthhf8r2gf6py5und
+bc1qrjd7ufdslgy847pytpu0kh6d7xpwvjsjvxcyvf
+bc1qhgc4mlpwwlje6p8x4j2tc47qsd8mcm8uwtnw3p
+bc1qg3yyjw47tn2ym7w3etyeldlegnzh2qjv9mja03
+1QHE2DafLJENbX4nbUPGqXhgA8ozYCMW89
+bc1q3al85rrl37wzqny5wxeqnjz36c3xhr07c7zdxy
+bc1qexeyu3e59npel9kj4kpas65utxhm3ywlt9stg2
+bc1q4tuh6q3clwsyq9hw3ja4cyje6phxeg78p6xlxn
 
-## Expanding the ESLint configuration
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+genuine wallet addresses
+34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+bc1ql49ydapnjafl5t2cp9zqpjwe6pdgmxy98859v2
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+3M219KR5vEneNb47ewrPfWyb5jQ2DjxRP6
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+bc1qgdjqv0av3q56jvd82tkdjpy7gdp9ut8tlqmgrpmv24sq90ecnvqqjwvw97
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+bc1qazcm763858nkj2dj986etajv6wquslv8uxwczt
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+bc1qjasf9z3h7w3jspkhtgatgpyvvzgpa2wwd2lr0eh5tx44reyn2k7sfc27a4
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+bc1qd4ysezhmypwty5dnw7c8nqy5h5nxg0xqsvaefd0qn5kq32vwnwqqgv4rzr
+
+1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF
+
+bc1q8yj0herd4r4yxszw3nkfvt53433thk0f5qst4g
+
+bc1qa5wkgaew2dkv56kfvj49j0av5nml45x9ek9hz6

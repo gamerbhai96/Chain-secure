@@ -1,4 +1,4 @@
-// API Response Types for BitScan
+// API Response Types for ChainSecure
 export interface BitcoinAddress {
   address: string;
   risk_score: number;
@@ -30,15 +30,25 @@ export interface DataLimitations {
   rate_limit_detected: boolean;
   real_time_data: boolean;
   api_status: string;
-  note?: string;
   description?: string;
   accuracy_note?: string;
   recommendation?: string;
 }
 
 export interface DetailedAnalysis {
-  blockchain_analysis: any;
-  ml_prediction: any;
+  blockchain_analysis: Record<string, unknown>;
+  ml_prediction: Record<string, unknown>;
+}
+
+export interface ModelPerformanceMetrics {
+  accuracy?: number;
+  precision?: number;
+  recall?: number;
+  f1_score?: number;
+  ensemble_confidence?: number;
+  model_count?: number;
+  agreement_score?: number;
+  [key: string]: unknown;
 }
 
 export interface AnalysisResponse {
