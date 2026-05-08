@@ -696,6 +696,16 @@ class BlockchainAnalyzer:
                 score += 0.2
                 flags.append(f"Rapid fund movement: avg interval {avg_interval:.2f} hours")
             
+            # Dusting / Address Poisoning Scam Detection
+            # Scammers use burner wallets to send tiny amounts (dust) to pollute histories
+            total_received_btc = basic_info.get('total_received_btc', 0)
+            if 0 < total_received_btc < 0.005 and tx_count > 0 and tx_count < 10:
+                # If a wallet has very few txs, tiny amounts, AND rapid movement/fan-out, it's highly likely poisoning
+                if fraud_signals.get('rapid_fund_movement') or fraud_signals.get('high_fan_out'):
+                    fraud_signals['dusting_or_poisoning'] = True
+                    score += 0.4
+                    flags.append("Pattern strongly indicates Address Poisoning or Dusting scam")
+            
             # Calculate overall fraud score
             fraud_signals['overall_fraud_score'] = min(score, 1.0)
             fraud_signals['detailed_flags'] = flags
@@ -802,39 +812,48 @@ class BlockchainAnalyzer:
         turnover_ratio = activity_patterns.get('turnover_ratio', 0)
         retention_ratio = activity_patterns.get('retention_ratio', 0)
         
-        # Simple fraud scoring based on patterns
+        # For very high-activity addresses (exchanges, pools), use context-aware fraud scoring.
+        # NOTE: High tx_count, high volume, and even high turnover are NORMAL for exchanges.
+        # Only flag genuine anomalies that don't fit institutional wallet patterns.
         risk_score = 0.0
         risk_flags_list = []
+        is_institutional = tx_count > 10000 or total_received_btc > 10000 or balance_btc > 500
         
-        if turnover_ratio > 0.9:  # High turnover
+        # Extremely high turnover with NO retained balance AND low tx count = suspicious
+        # But not for exchanges which process millions of transactions
+        if turnover_ratio > 0.99 and not is_institutional and retention_ratio < 0.01:
             risk_score += 0.2
-            risk_flags_list.append('High transaction turnover detected')
-            
-        if retention_ratio < 0.1:  # Low retention
-            risk_score += 0.15
-            risk_flags_list.append('Low balance retention pattern')
-            
-        if velocity > 1000000:  # High velocity (>0.01 BTC per transaction)
+            risk_flags_list.append('Near-complete fund drainage with no retention')
+        elif turnover_ratio > 0.97 and not is_institutional:
             risk_score += 0.1
-            risk_flags_list.append('High transaction velocity')
-            
-        if tx_count > 5000:  # Very high activity
-            risk_score += 0.05
-            risk_flags_list.append('Extremely high transaction activity')
+            risk_flags_list.append('Very high transaction turnover')
+
+        # Low retention is only suspicious for smaller wallets, not exchanges
+        if retention_ratio < 0.01 and not is_institutional and total_received_btc > 1:
+            risk_score += 0.1
+            risk_flags_list.append('Near-zero balance retention')
         
         if not risk_flags_list:
-            risk_flags_list = ['High-activity address - simplified analysis performed']
+            if is_institutional:
+                risk_flags_list = ['High-activity institutional address (exchange/pool/service) - simplified analysis']
+            else:
+                risk_flags_list = ['High-activity address - simplified analysis performed']
         
         # Determine risk level
-        if risk_score > 0.7:
+        if risk_score > 0.6:
             risk_level = 'HIGH'
-        elif risk_score > 0.4:
+        elif risk_score > 0.35:
             risk_level = 'MEDIUM'
-        elif risk_score > 0.2:
+        elif risk_score > 0.15:
             risk_level = 'LOW'
         else:
             risk_level = 'VERY_LOW'
-        
+
+        # Estimate activity span: institutions active for years
+        # Use a conservative estimate: ~5 tx/day for large wallets = tx_count / 5
+        estimated_days = max(tx_count / max(tx_count / 365, 1), 30) if tx_count > 0 else 0
+        avg_interval = 24.0 / max(tx_count / 365, 1) if tx_count > 0 else 24.0
+
         return {
             'address': address,
             'timestamp': datetime.now().isoformat(),
@@ -848,10 +867,10 @@ class BlockchainAnalyzer:
             'transaction_patterns': {
                 'total_transactions': tx_count,
                 'flow_concentration': {
-                    'unique_input_addresses': int(tx_count * 0.3),  # Estimated
-                    'unique_output_addresses': int(tx_count * 0.4),  # Estimated
+                    'unique_input_addresses': int(tx_count * 0.3),
+                    'unique_output_addresses': int(tx_count * 0.4),
                 },
-                'rapid_movement_count': int(tx_count * 0.1) if turnover_ratio > 0.8 else 0,
+                'rapid_movement_count': 0,  # Cannot determine without detailed tx data
                 'amount_statistics': {
                     'mean_amount': (total_received_btc / max(tx_count, 1)),
                     'velocity': velocity,
@@ -860,33 +879,38 @@ class BlockchainAnalyzer:
                 'analysis_scope': f'high_activity_simplified_{tx_count}_transactions'
             },
             'network_analysis': {
-                'node_count': min(tx_count, 100),  # Estimated network size
-                'edge_count': min(tx_count * 2, 200),  # Estimated connections
-                'density': 0.1,  # Estimated
+                'node_count': min(tx_count, 100),
+                'edge_count': min(tx_count * 2, 200),
+                'density': 0.05,
                 'centrality_measures': {
-                    'betweenness_centrality': 0.5 if tx_count > 1000 else 0.1,
+                    # Exchanges have high degree centrality but NOT high betweenness
+                    # (they are endpoints, not money-laundering hubs)
+                    'betweenness_centrality': 0.05 if is_institutional else 0.1,
                     'degree_centrality': min(tx_count / 10000, 1.0)
                 }
             },
             'clustering_analysis': {
-                'cluster_size': min(int(tx_count * 0.1), 50)  # Estimated cluster
+                # Institutions connect to many addresses but it's not a suspicious cluster
+                'cluster_size': 5 if is_institutional else min(int(tx_count * 0.01), 20)
             },
             'temporal_analysis': {
                 'transaction_frequency': {
-                    'average_interval_hours': 24.0 / (tx_count / 365) if tx_count > 365 else 24.0,
-                    'estimated_activity_span_days': min(tx_count / 10, 1000)
+                    'average_interval_hours': avg_interval,
+                    'time_span_days': estimated_days,
+                    'estimated_activity_span_days': estimated_days
                 },
                 'burst_detection': {
-                    'burst_count': int(tx_count * 0.05) if velocity > 500000 else 0
+                    'burst_count': 0  # Cannot determine without detailed tx timestamps
                 }
             },
             'fraud_signals': {
-                'mixing_service_usage': turnover_ratio > 0.95,
-                'rapid_fund_movement': velocity > 1000000,
-                'high_fan_out': tx_count > 10000,
-                'round_amount_transactions': False,  # Can't determine without detailed analysis
-                'burst_activity': velocity > 2000000,
-                'high_centrality': tx_count > 5000,
+                # For institutional wallets, these pattern-based flags are NOT reliable fraud signals
+                'mixing_service_usage': turnover_ratio > 0.99 and not is_institutional,
+                'rapid_fund_movement': False,  # Can't determine from summary data
+                'high_fan_out': False,  # Normal for exchanges
+                'round_amount_transactions': False,
+                'burst_activity': False,
+                'high_centrality': False,  # Exchanges are not laundering hubs
                 'cluster_fragmentation': False,
                 'overall_fraud_score': risk_score,
                 'risk_level': risk_level,
@@ -895,7 +919,8 @@ class BlockchainAnalyzer:
             'optimization_info': {
                 'analysis_type': 'high_activity_simplified',
                 'reason': f'Address has {tx_count} transactions - using optimized analysis',
-                'data_source': 'blockcypher_summary'
+                'data_source': 'blockcypher_summary',
+                'is_institutional': is_institutional
             }
         }
     

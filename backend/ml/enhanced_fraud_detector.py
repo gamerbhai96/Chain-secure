@@ -62,7 +62,6 @@ class EnhancedFraudDetector:
             self.model_path = model_path
         self.feature_extractor = BitcoinFeatureExtractor()
         self.model_feature_names = None
-        self.known_fraud_addresses = self._load_known_fraud_addresses()
         self.models = {}
         self.scalers = {}
         self.model_metrics = {}
@@ -588,54 +587,8 @@ class EnhancedFraudDetector:
         try:
             address = analysis_result.get('address', 'unknown')
             
-            # Special handling for known legitimate addresses
-            known_legitimate_addresses = {
-                "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa": "Genesis block address",
-                "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2": "Satoshi Nakamoto wallet",
-                "1Q2TWHE3GMdB6BZKafqwxXtWAWgFt5Jvm3": "Known exchange wallet",
-                "1FfmbHfnpaZjKFvyi1okTjJJusN455paPH": "Known exchange wallet",
-                "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy": "Known exchange wallet"
-            }
-            
-            # Extended list of known legitimate addresses (top 100 richest wallets)
-            extended_legitimate_addresses = [
-                "3D2oetD6WYfuLbNry3bD9H92yNsjBjK3zf",  # Satoshi's wallet
-                "1Pzf7qT7bBGouvnjRvtRDjcB8oejZHh25F",  # Mt. Gox
-                "1JvXhnHCi6XqSexQFawckKZDpQzKhn3Vhx",  # Mt. Gox
-                "1Archive1n2C579dMsAu3iC6tWzuQJz8dN",  # Archive.org
-                "35hK24tcLEWcgNA4JxpvbkNl4dKxZtUEhW",  # Binance
-                "1NDyJtNTjmwk5xPNhjgAMu4HDHigtobu1s",  # Bittrex
-                "1BZpGvkNeH9E93CNcuNjZQ7jCJFHEQxMTi",  # Bitfinex
-                "1MkCDCzHpBsYQivpp4hqMo4j3UxGL8xTg1",  # Bitfinex
-            ]
-            
-            # Check if address is in extended legitimate list
-            if address in known_legitimate_addresses or any(legit_addr in address for legit_addr in extended_legitimate_addresses):
-                if address in known_legitimate_addresses:
-                    reason = known_legitimate_addresses[address]
-                else:
-                    reason = "Known legitimate wallet"
-                    
-                return {
-                    'address': address,
-                    'fraud_probability': 0.01,
-                    'risk_level': 'VERY_LOW',
-                    'confidence': 0.95,
-                    'model_predictions': {},
-                    'reasoning': f'{reason} - known legitimate',
-                    'model_used': 'whitelist',
-                    'prediction_method': 'known_legitimate',
-                    'model_version': 'enhanced_v2.0',
-                    'features_used': 0,
-                    'successful_models': 0,
-                    'risk_factors': [],  # No risk factors for legitimate addresses
-                    'positive_indicators': [
-                        'Address in known database',
-                        'Limited pattern detection',
-                        'Historical address detected'
-                    ],
-                    'timestamp': datetime.now().isoformat()
-                }
+            # Removed hardcoded whitelist and blacklist checks.
+            # System now relies entirely on ML and pattern analysis.
             
             # Check if we have minimal or no data - use fallback immediately
             basic_metrics = analysis_result.get('basic_metrics', {})
@@ -935,26 +888,53 @@ class EnhancedFraudDetector:
         # Boost probability based on blockchain fraud signals
         fraud_signals = analysis_result.get('fraud_signals', {})
         fraud_score = fraud_signals.get('overall_fraud_score', 0)
+        basic_metrics = analysis_result.get('basic_metrics', {})
+        tx_count = basic_metrics.get('transaction_count', 0)
+        total_received = basic_metrics.get('total_received_btc', 0)
+        balance = basic_metrics.get('balance_btc', 0)
+        
+        # Detect institutional/exchange wallets — these have high volume but low real fraud risk
+        is_institutional = tx_count > 10000 or total_received > 10000 or balance > 500
         
         if fraud_score > 0:
-            # Stronger amplification when blockchain fraud signals are detected
-            # The blockchain analyzer already did deep signal detection, so trust it
-            boost_factor = 1.0 + (fraud_score * 1.5)  # Up to 150% boost
-            result = min(result * boost_factor, 0.99)
-            
-            # If fraud score is high (>0.5), ensure minimum probability floor
-            if fraud_score > 0.5:
-                result = max(result, fraud_score * 0.8)  # Floor at 80% of fraud score
-            elif fraud_score > 0.3:
-                result = max(result, fraud_score * 0.6)  # Floor at 60% of fraud score
+            if is_institutional:
+                # Very modest boost for institutional wallets — high-volume simplified analysis
+                # cannot reliably detect real fraud, so don't over-amplify
+                boost_factor = 1.0 + (fraud_score * 0.2)  # Max 20% boost
+                result = min(result * boost_factor, 0.75)
+            else:
+                # Scale boost with fraud_score strength for normal wallets
+                # Weak signal: 20% boost | Moderate: 70% | Strong: 120% | Very strong: 150%
+                if fraud_score > 0.55:
+                    boost_multiplier = 1.5
+                elif fraud_score > 0.35:
+                    boost_multiplier = 1.2
+                elif fraud_score > 0.15:
+                    boost_multiplier = 0.7
+                else:
+                    boost_multiplier = 0.2
                 
-            logger.info(f"Fraud signal boost applied: {fraud_score:.2f} -> probability boosted to {result:.2f}")
+                boost_factor = 1.0 + (fraud_score * boost_multiplier)
+                result = min(result * boost_factor, 0.99)
+                
+                # Probability floors ensure blockchain-confirmed fraud signals are respected
+                if fraud_score > 0.55:
+                    result = max(result, fraud_score * 0.7)  # Floor at 70% of fraud score
+                elif fraud_score > 0.35:
+                    result = max(result, fraud_score * 0.55)  # Floor at 55% of fraud score
+                elif fraud_score > 0.2:
+                    result = max(result, fraud_score * 0.4)  # Floor at 40% of fraud score
+                
+            logger.info(f"Fraud signal boost applied: fraud_score={fraud_score:.2f} -> {result:.2f} (institutional={is_institutional})")
         
-        # Also check for specific fraud flags from blockchain analysis
-        if fraud_signals.get('mixing_service_usage'):
-            result = max(result, 0.6)
-        if fraud_signals.get('rapid_fund_movement') and fraud_signals.get('high_fan_out'):
-            result = max(result, 0.55)
+        # Apply specific fraud flag floors for non-institutional wallets
+        if not is_institutional:
+            if fraud_signals.get('dusting_or_poisoning'):
+                result = max(result, 0.75)  # Address poisoning is a high-risk scam
+            if fraud_signals.get('mixing_service_usage'):
+                result = max(result, 0.60)
+            if fraud_signals.get('rapid_fund_movement') and fraud_signals.get('high_fan_out'):
+                result = max(result, 0.55)
         
         return max(0.01, min(0.99, result))  # Ensure reasonable bounds
     
@@ -1152,43 +1132,57 @@ class EnhancedFraudDetector:
         balance = basic_metrics.get('balance_btc', 0)
         fraud_signals = analysis_result.get('fraud_signals', {})
         
-        # If blockchain analysis already found fraud signals, do NOT dampen
         fraud_score = fraud_signals.get('overall_fraud_score', 0)
-        if fraud_score > 0.3:
-            return probability  # Trust the blockchain analysis
         
-        # Count confirmed legitimacy signals (need multiple)
+        # Count confirmed legitimacy signals (need multiple to justify dampening)
         legitimacy_signals = 0
         
-        # Signal 1: High balance retention (>20% retained = not draining funds)
-        if total_received > 0 and balance / total_received > 0.2:
+        # Signal 1: Meaningful balance retention (not draining to zero)
+        if total_received > 0 and balance / total_received > 0.15:
             legitimacy_signals += 1
         
-        # Signal 2: Long activity history (temporal analysis shows sustained activity)
+        # Signal 2: Very large absolute balance (strong institutional signal)
+        if balance > 1000:
+            legitimacy_signals += 2  # Worth 2 points — very strong institutional signal
+        elif balance > 100:
+            legitimacy_signals += 1
+        
+        # Signal 3: High transaction count with reasonable turnover (active legitimate service)
+        if transaction_count > 500 and 0.3 <= (total_sent / max(total_received, 1)) <= 1.05:
+            legitimacy_signals += 1
+        if transaction_count > 10000:
+            legitimacy_signals += 1  # Extra point for very high-volume (exchange pattern)
+        
+        # Signal 4: Long activity history
         temporal = analysis_result.get('temporal_analysis', {})
         time_span = temporal.get('transaction_frequency', {}).get('time_span_days', 0)
-        if time_span > 365:  # Active for over a year
+        if time_span > 365:
             legitimacy_signals += 1
         
-        # Signal 3: High transaction count with reasonable turnover
-        if transaction_count > 500 and 0.3 <= (total_sent / max(total_received, 1)) <= 1.0:
+        # Signal 5: Very large total received (institutional scale)
+        if total_received > 10000:
             legitimacy_signals += 1
         
-        # Signal 4: Large balance still held (institutional/exchange)
-        if balance > 1000:
-            legitimacy_signals += 1
-        
-        # Only apply dampening if 3+ legitimacy signals confirmed
+        # For clear institutional wallets (4+ signals), always dampen
+        # even if the blockchain analysis produced some fraud signals
+        # (high-activity simplified analysis produces spurious signals)
         adjustment_factor = 1.0
-        if legitimacy_signals >= 4:
+        if legitimacy_signals >= 5:
+            adjustment_factor = 0.08  # Very strong institutional pattern — likely exchange
+        elif legitimacy_signals >= 4:
             adjustment_factor = 0.15  # Strong legitimate pattern
         elif legitimacy_signals >= 3:
-            adjustment_factor = 0.3  # Likely legitimate
+            adjustment_factor = 0.3   # Likely legitimate
         elif legitimacy_signals >= 2:
-            adjustment_factor = 0.6  # Moderate legitimacy
-        # 0 or 1 signals: no adjustment — could be a scam
+            # For moderate legitimacy, only dampen if fraud_score is also modest
+            if fraud_score <= 0.3:
+                adjustment_factor = 0.6
+        # 0 or 1 signals with high fraud_score: no adjustment — could be a scam
+        elif fraud_score > 0.3:
+            return probability  # Trust the blockchain analysis for suspicious addresses
         
         adjusted_prob = probability * adjustment_factor
+        logger.info(f"Legitimacy adjustment: signals={legitimacy_signals}, fraud_score={fraud_score:.2f}, factor={adjustment_factor}, {probability:.2f} -> {adjusted_prob:.2f}")
         return max(0.01, min(adjusted_prob, probability))
     
     def _adjust_probability_for_false_positives(self, probability: float, analysis_result: Dict[str, Any]) -> float:
@@ -1353,24 +1347,6 @@ class EnhancedFraudDetector:
         """
         try:
             address = analysis_result.get('address', 'unknown')
-            
-            # Step 0: Check against known fraud database for instant high-confidence detection
-            if address in self.known_fraud_addresses:
-                logger.info(f"🚩 ADDRESS {address} MATCHED KNOWN FRAUD DATABASE")
-                return {
-                    'address': address,
-                    'fraud_probability': 1.0,
-                    'risk_level': 'CRITICAL',
-                    'confidence': 1.0,
-                    'reasoning': 'Address identified as a known fraudulent address in our global threat intelligence database.',
-                    'model_used': 'threat_intelligence_db',
-                    'risk_factors_detected': 100,
-                    'risk_details': ['MATCH: Known Fraudulent Address', 'Global Threat Intelligence Hit'],
-                    'analysis_type': 'threat_intelligence',
-                    'pattern_matches': 1,
-                    'enhanced_analysis': True,
-                    'timestamp': datetime.now().isoformat()
-                }
             
             # Step 1: Get ML model predictions (if available)
             ml_predictions = {}
@@ -1952,18 +1928,7 @@ class EnhancedFraudDetector:
                 
         logger.info("Hyperparameter optimization completed")
     
-    def _load_known_fraud_addresses(self) -> List[str]:
-        """Load known fraud addresses from database"""
-        try:
-            fraud_file = Path("data/known_fraud_addresses.json")
-            if fraud_file.exists():
-                with open(fraud_file, 'r') as f:
-                    return json.load(f)
-            return []
-        except Exception as e:
-            logger.warning(f"Failed to load known fraud addresses: {e}")
-            return []
-    
+
     def _load_enhanced_models(self):
         """Load pre-trained enhanced models from individual files or a single bundle"""
         bundle_path = Path(self.model_path) / "enhanced_fraud_detector.pkl"

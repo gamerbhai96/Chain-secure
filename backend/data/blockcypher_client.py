@@ -232,6 +232,34 @@ class BlockCypherClient:
                 # Handle empty response (404) - try alternate endpoints before giving up
                 logger.info(f"Address {address} not found on /addrs - trying alternate endpoints")
                 
+                # Try blockchain.info fallback for mainnet
+                if self.network in ["main", "mainnet"]:
+                    try:
+                        logger.info(f"Trying blockchain.info fallback for {address}")
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            bc_response = await client.get(f"https://blockchain.info/rawaddr/{address}?limit=0")
+                            if bc_response.status_code == 200:
+                                bc_data = bc_response.json()
+                                balance = bc_data.get('final_balance', 0)
+                                total_received = bc_data.get('total_received', 0)
+                                total_sent = bc_data.get('total_sent', 0)
+                                n_tx = bc_data.get('n_tx', 0)
+                                
+                                logger.info(f"blockchain.info fallback successful: {n_tx} txs, {balance/1e8} BTC")
+                                
+                                return {
+                                    'address': address,
+                                    'balance': balance,
+                                    'total_received': total_received,
+                                    'total_sent': total_sent,
+                                    'n_tx': n_tx,
+                                    'unconfirmed_balance': 0,
+                                    'final_balance': balance,
+                                    'note': 'Data derived from blockchain.info fallback'
+                                }
+                    except Exception as e:
+                        logger.warning(f"blockchain.info fallback failed for {address}: {e}")
+                
                 # Try /full endpoint to get transaction data
                 try:
                     full_response = await self._make_request_with_retry(f"/addrs/{address}/full", {'limit': 50})
@@ -264,7 +292,7 @@ class BlockCypherClient:
                             'note': 'Data derived from transaction history'
                         }
                 except Exception as e:
-                    logger.warning(f"Full endpoint fallback failed for {address}: {e}")
+                        logger.warning(f"Full endpoint fallback failed for {address}: {e}")
                 
                 # Final fallback - return minimal response
                 return {

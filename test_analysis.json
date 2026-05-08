@@ -1,0 +1,108 @@
+{
+  "address": "bc1q9nh4revv6yqhj2gc5usncrpsfnh7ypwr9h0sp2",
+  "timestamp": "2026-05-08T18:44:37.675865",
+  "network": "mainnet",
+  "basic_metrics": {
+    "balance": 107372,
+    "total_received": 107372,
+    "total_sent": 0,
+    "transaction_count": 4,
+    "balance_btc": 0.00107372,
+    "total_received_btc": 0.00107372,
+    "total_sent_btc": 0.0
+  },
+  "transaction_patterns": {
+    "total_transactions": 0,
+    "input_patterns": {},
+    "output_patterns": {},
+    "flow_concentration": {
+      "unique_input_addresses": 0,
+      "unique_output_addresses": 0
+    },
+    "mixing_behavior": {},
+    "rapid_movements": [],
+    "rapid_movement_count": 0,
+    "amount_statistics": {
+      "mean_amount": 0.0,
+      "median_amount": 0.0,
+      "std_amount": 0.0,
+      "min_amount": 0.0,
+      "max_amount": 0.0,
+      "round_amounts": 0
+    },
+    "analysis_scope": "no_transactions"
+  },
+  "network_analysis": {
+    "node_count": 1,
+    "edge_count": 0,
+    "density": 0,
+    "clustering_coefficient": 0.0,
+    "centrality_measures": {
+      "degree_centrality": 1,
+      "betweenness_centrality": 0.0,
+      "closeness_centrality": 0.0,
+      "eigenvector_centrality": 0
+    },
+    "community_detection": {},
+    "suspicious_subgraphs": []
+  },
+  "risk_indicators": {
+    "high_velocity": false,
+    "mixing_suspected": false,
+    "large_cluster": false,
+    "low_retention": false
+  },
+  "clustering_analysis": {
+    "cluster_size": 1,
+    "total_transactions": 0,
+    "address_graph": {
+      "bc1q9nh4revv6yqhj2gc5usncrpsfnh7ypwr9h0sp2": {
+        "connected_addresses": [],
+        "transaction_count": 0,
+        "depth": 0
+      }
+    },
+    "clustering_coefficients": {},
+    "common_ownership_indicators": {}
+  },
+  "temporal_analysis": {
+    "transaction_frequency": {
+      "total_transactions": 0,
+      "time_span_days": 0,
+      "average_interval_hours": 0,
+      "median_interval_hours": 0,
+      "std_interval_hours": 0
+    },
+    "burst_detection": {
+      "burst_count": 0,
+      "bursts": [],
+      "max_burst_size": 0
+    },
+    "regularity_analysis": {
+      "regularity_score": 0.0,
+      "is_regular_pattern": false,
+      "coefficient_of_variation": 0.0
+    },
+    "analysis_scope": "no_transactions"
+  },
+  "fraud_signals": {
+    "mixing_service_usage": false,
+    "rapid_fund_movement": true,
+    "high_fan_out": false,
+    "round_amount_transactions": false,
+    "burst_activity": false,
+    "high_centrality": false,
+    "cluster_fragmentation": false,
+    "overall_fraud_score": 0.2,
+    "risk_level": "LOW",
+    "detailed_flags": [
+      "Rapid fund movement: avg interval 0.00 hours"
+    ]
+  },
+  "optimization_info": {
+    "analysis_scope": "parallel_analysis_optimized",
+    "max_transactions_analyzed": 200,
+    "api_call_optimization": "parallel_with_caching",
+    "timeout": "120_seconds"
+  }
+}
