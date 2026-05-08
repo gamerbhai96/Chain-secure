@@ -1,5 +1,18 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { type AxiosResponse } from 'axios';
-import type { AnalysisResponse, SystemStats, ModelPerformanceMetrics } from '../types/api';
+import type {
+  AnalysisResponse,
+  SystemStats,
+  ModelPerformanceMetrics,
+  AuthResponse,
+  LoginRequest,
+  RegisterRequest,
+  OtpRequest,
+  OtpVerifyRequest,
+  User,
+  CryptoPriceResponse,
+  NewsResponse,
+} from '../types/api';
 import type { WalletTimeSeriesResponse } from '../types/timeseries';
 
 // API Configuration
@@ -20,6 +33,15 @@ const apiClient = axios.create({
   },
 });
 
+// ── Auth token interceptor ──────────────────────
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('chainsecure_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,
@@ -30,7 +52,11 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 429) {
       throw new Error('Rate limit exceeded. Please wait a few minutes before trying again.');
     } else if (error.response?.status === 400) {
-      throw new Error('Invalid Bitcoin address format. Please check the address and try again.');
+      throw new Error(error.response?.data?.detail || 'Invalid request. Please check your input and try again.');
+    } else if (error.response?.status === 401) {
+      throw new Error(error.response?.data?.detail || 'Authentication failed. Please login again.');
+    } else if (error.response?.status === 409) {
+      throw new Error(error.response?.data?.detail || 'Conflict. This resource already exists.');
     } else if (error.response?.status === 504) {
       throw new Error('Analysis timeout. The address may have high activity. Please try again later.');
     } else if (error.response?.status === 500) {
@@ -153,6 +179,64 @@ export class ChainSecureAPI {
       console.error('Error fetching wallet timeseries:', error);
       throw error;
     }
+  }
+
+  // ─── Auth API ────────────────────────────────────
+  static async sendOtp(data: OtpRequest): Promise<{ message: string; email: string; expires_in_minutes: number }> {
+    const response = await apiClient.post('/auth/send-otp', data);
+    return response.data;
+  }
+
+  static async verifyOtp(data: OtpVerifyRequest): Promise<{ message: string; verified: boolean }> {
+    const response = await apiClient.post('/auth/verify-otp', data);
+    return response.data;
+  }
+
+  static async register(data: RegisterRequest): Promise<AuthResponse> {
+    const response = await apiClient.post<AuthResponse>('/auth/register', data);
+    return response.data;
+  }
+
+  static async login(data: LoginRequest): Promise<AuthResponse> {
+    const response = await apiClient.post<AuthResponse>('/auth/login', data);
+    return response.data;
+  }
+
+  static async getProfile(): Promise<{ user: User }> {
+    const response = await apiClient.get<{ user: User }>('/auth/me');
+    return response.data;
+  }
+
+  static async updateProfile(data: { name?: string }): Promise<{ user: User }> {
+    const response = await apiClient.put<{ user: User }>('/auth/me', data);
+    return response.data;
+  }
+
+  // ─── Scan History (DB) ──────────────────────────
+  static async getScanHistory(): Promise<{ history: any[] }> {
+    const response = await apiClient.get('/auth/history');
+    return response.data;
+  }
+
+  static async saveScanResult(data: { address: string; risk_score: number; risk_level: string; result_json: string }): Promise<{ message: string }> {
+    const response = await apiClient.post('/auth/history', data);
+    return response.data;
+  }
+
+  static async clearScanHistory(): Promise<{ message: string }> {
+    const response = await apiClient.delete('/auth/history');
+    return response.data;
+  }
+
+  // ─── Market Data ────────────────────────────────
+  static async getCryptoPrices(): Promise<CryptoPriceResponse> {
+    const response = await apiClient.get<CryptoPriceResponse>('/market/prices');
+    return response.data;
+  }
+
+  static async getCryptoNews(): Promise<NewsResponse> {
+    const response = await apiClient.get<NewsResponse>('/market/news');
+    return response.data;
   }
 }
 export default ChainSecureAPI;

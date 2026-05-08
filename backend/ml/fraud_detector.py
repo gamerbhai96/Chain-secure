@@ -83,7 +83,7 @@ class FraudDetector:
             min_samples_leaf=2,
             class_weight='balanced',
             random_state=42,
-            n_jobs=-1
+            n_jobs=1
         )
         
         # XGBoost - High performance gradient boosting
@@ -95,13 +95,13 @@ class FraudDetector:
             colsample_bytree=0.8,
             scale_pos_weight=3,  # Handle class imbalance
             random_state=42,
-            n_jobs=-1
+            n_jobs=1
         )
         
         # Logistic Regression - Fast and interpretable
         self.models['logistic'] = LogisticRegression(
             class_weight='balanced',
-            max_iter=1000,
+            max_iter=5000,
             random_state=42
         )
         
@@ -109,7 +109,7 @@ class FraudDetector:
         self.models['isolation_forest'] = IsolationForest(
             contamination=0.1,
             random_state=42,
-            n_jobs=-1
+            n_jobs=1
         )
         
         # Initialize scalers
@@ -1059,10 +1059,14 @@ class FraudDetector:
             
             # Cross-validation for better performance estimation
             try:
-                cv_scores = cross_val_score(model, X_train_scaled if model_name in ['logistic', 'svm'] else X_train_balanced, 
-                                          y_train_balanced, cv=5, scoring='f1', n_jobs=-1)
-                cv_mean = np.mean(cv_scores)
-                cv_std = np.std(cv_scores)
+                if model_name == 'isolation_forest':
+                    # Skip CV for unsupervised model - its predict() returns -1/1 which breaks binary f1 scoring
+                    cv_mean, cv_std = f1, 0.0
+                else:
+                    cv_scores = cross_val_score(model, X_train_scaled if model_name in ['logistic', 'svm'] else X_train_balanced, 
+                                              y_train_balanced, cv=5, scoring='f1', n_jobs=1)
+                    cv_mean = np.mean(cv_scores)
+                    cv_std = np.std(cv_scores)
             except:
                 cv_mean, cv_std = f1, 0.0
             
@@ -1896,48 +1900,6 @@ class FraudDetector:
         base_result['confidence_adjustment'] = confidence_multiplier
         
         return base_result
-        """
-        Apply intelligent variation to prevent stuck predictions while maintaining accuracy
-        """
-        basic_metrics = analysis_data.get('basic_metrics', {})
-        transaction_count = basic_metrics.get('transaction_count', 0)
-        balance_btc = basic_metrics.get('balance_btc', 0)
-        total_received = basic_metrics.get('total_received_btc', 0)
-        
-        # Generate address-specific variation using multiple hash factors
-        address = analysis_data.get('address', '')
-        address_hash = hash(address) % 10000
-        secondary_hash = hash(address[::-1]) % 7919  # Reverse address hash
-        tertiary_hash = sum(ord(c) for c in address if c.isalnum()) % 3571
-        
-        # Create multi-dimensional variation
-        base_variation = (address_hash / 10000.0) * 0.15  # 0-15% base variation
-        secondary_variation = (secondary_hash / 7919.0) * 0.08  # 0-8% secondary
-        tertiary_variation = (tertiary_hash / 3571.0) * 0.05  # 0-5% tertiary
-        
-        # Combine variations with different weights
-        combined_variation = (0.5 * base_variation + 0.3 * secondary_variation + 0.2 * tertiary_variation)
-        
-        # Apply transaction-based scaling
-        if transaction_count == 0 and balance_btc == 0 and total_received == 0:
-            # For truly empty addresses: wider range with proper variation
-            base_empty_risk = 0.01 + combined_variation * 0.8  # 1-13% range
-            return max(0.005, min(0.15, base_empty_risk))
-        elif transaction_count < 5:
-            # Low activity: apply moderate variation around ML probability
-            variation = combined_variation * 0.6  # 0-9% variation
-            adjusted = probability + variation - (combined_variation * 0.3)
-            return max(0.02, min(0.95, adjusted))
-        elif transaction_count < 50:
-            # Medium activity: moderate variation with ML emphasis
-            variation = combined_variation * 0.8  # 0-12% variation
-            adjusted = probability + variation - (combined_variation * 0.4)
-            return max(0.05, min(0.95, adjusted))
-        else:
-            # High activity: full ML-driven variation
-            variation = combined_variation * 1.2  # 0-18% variation
-            adjusted = probability + variation - (combined_variation * 0.6)
-            return max(0.05, min(0.95, adjusted))
     
     def _generate_intelligent_reasoning(self, probability: float, analysis_data: Dict, data_quality: float) -> str:
         """

@@ -22,6 +22,8 @@ sys.path.insert(0, str(parent_dir))
 # Import our modules
 from api.routes import router as api_router
 from api.timeseries import router as ts_router
+from api.auth import router as auth_router, init_db as init_auth_db
+from api.market import router as market_router
 from blockchain.analyzer import BlockchainAnalyzer
 from ml.enhanced_fraud_detector import EnhancedFraudDetector
 from ml.fraud_detector import FraudDetector
@@ -61,6 +63,8 @@ app.add_middleware(
 # Include API routes BEFORE static file mounts
 app.include_router(api_router, prefix="/api/v1", tags=["BitScan API"])
 app.include_router(ts_router, prefix="/api/v1", tags=["Wallet Time Series"])
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(market_router, prefix="/api/v1/market", tags=["Market"])
 
 # Mount static files with caching
 if os.path.exists("frontend/dist"):
@@ -109,6 +113,9 @@ async def startup_event():
     global blockchain_analyzer, fraud_detector, legacy_fraud_detector
     
     print("Initializing BitScan services...")
+    
+    # Initialize auth database
+    init_auth_db()
     
     # Initialize blockchain analyzer
     blockchain_analyzer = BlockchainAnalyzer()

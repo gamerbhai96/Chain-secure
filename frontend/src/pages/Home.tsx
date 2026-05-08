@@ -11,6 +11,12 @@ import {
 import { useNavigate } from 'react-router-dom';
 import ChainSecureAPI from '../services/api';
 import type { AnalysisResponse } from '../types/api';
+import { CryptoPrices } from '../components/CryptoPrices';
+import { CryptoNews } from '../components/CryptoNews';
+
+interface HomeProps {
+  isDarkMode: boolean;
+}
 
 const FeatureCard = styled(Box)<{ theme?: Theme }>(({ theme }) => ({
   padding: theme?.spacing(3) || 24,
@@ -28,7 +34,7 @@ const FeatureCard = styled(Box)<{ theme?: Theme }>(({ theme }) => ({
   },
 }));
 
-export const Home: React.FC = () => {
+export const Home: React.FC<HomeProps> = ({ isDarkMode }) => {
   const [address, setAddress] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -209,7 +215,7 @@ export const Home: React.FC = () => {
         </Box>
       </Box>
 
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 4, width: '100%', textAlign: 'left' }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 4, width: '100%', textAlign: 'left', mb: 8 }}>
         <FeatureCard>
           <SecurityIcon sx={{ fontSize: 32, color: 'primary.main', mb: 2 }} />
           <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
@@ -237,6 +243,12 @@ export const Home: React.FC = () => {
             Comprehensive transaction behavior analysis
           </Typography>
         </FeatureCard>
+      </Box>
+
+      {/* Market Data integrated into the flow */}
+      <Box sx={{ width: '100%', textAlign: 'left' }}>
+        <CryptoPrices isDarkMode={isDarkMode} />
+        <CryptoNews isDarkMode={isDarkMode} />
       </Box>
     </Box>
   );

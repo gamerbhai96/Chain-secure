@@ -41,6 +41,10 @@ python-dotenv>=1.0.0
 dash>=2.13.0
 dash-bootstrap-components>=1.4.0
 dash-cytoscape>=0.3.0
+# Authentication
+bcrypt>=4.0.0
+PyJWT>=2.8.0
+sib-api-v3-sdk>=7.6.0
 
 # Utilities
 pyyaml>=6.0

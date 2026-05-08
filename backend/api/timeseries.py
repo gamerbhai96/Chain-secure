@@ -56,7 +56,7 @@ class WalletTimeSeriesResponse(BaseModel):
 async def get_wallet_timeseries(
     address: str = Path(..., description="Bitcoin address to build time series for"),
     days: int = Query(default=90, ge=1, le=3650, description="Timeframe in days"),
-    granularity: str = Query(default="day", regex="^(day|week|month|year)$", description="Aggregation granularity: day, week, month, or year")
+    granularity: str = Query(default="day", pattern="^(day|week|month|year)$", description="Aggregation granularity: day, week, month, or year")
 ):
     """
     Build per-day time series for a wallet address including received, sent, net and cumulative balance.

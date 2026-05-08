@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { AnalysisResponse } from '../types/api';
 import { utils, writeFile } from 'xlsx';
 import jsPDF from 'jspdf';

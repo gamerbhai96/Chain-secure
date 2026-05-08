@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useRef, useEffect } from 'react';
 import {
   ThemeProvider,
@@ -24,18 +25,22 @@ import { ChainSecureNav, PageWrapper } from './components/ChainSecureNav';
 import type { AnalysisResponse } from './types/api';
 import { Home } from './pages/Home';
 import { Report } from './pages/Report';
+import { useAuth } from './context/AuthContext';
+import { AuthModal } from './components/AuthModal';
+import { ChainSecureAPI } from './services/api';
 
 const queryClient = new QueryClient();
 
 const App: React.FC = () => {
+  const { isAuthenticated, user, logout } = useAuth();
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [scanHistory, setScanHistory] = useState<AnalysisResponse[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showFAQ, setShowFAQ] = useState(false);
   const [expandedFAQ, setExpandedFAQ] = useState<number | false>(false);
   const [showApproach, setShowApproach] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
   const faqContainerRef = useRef<HTMLDivElement>(null);
-  
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -43,12 +48,21 @@ const App: React.FC = () => {
   }, [isDarkMode]);
 
   useEffect(() => {
-    const saved = localStorage.getItem('chainsecure_scans');
-    if (saved) {
-      try { setScanHistory(JSON.parse(saved)); }
-      catch { localStorage.removeItem('chainsecure_scans'); }
+    if (isAuthenticated) {
+      ChainSecureAPI.getScanHistory()
+        .then(({ history }) => {
+          const parsed = history.map((h: any) => h.result).filter(Boolean);
+          setScanHistory(parsed);
+        })
+        .catch((err) => console.error('Error loading DB history:', err));
+    } else {
+      const saved = localStorage.getItem('chainsecure_scans');
+      if (saved) {
+        try { setScanHistory(JSON.parse(saved)); }
+        catch { localStorage.removeItem('chainsecure_scans'); }
+      }
     }
-  }, [showHistory]); // Refresh history when opening the modal
+  }, [isAuthenticated, showHistory]);
 
   const getRiskColor = (level: string) => {
     const map: Record<string, string> = {
@@ -71,10 +85,14 @@ const App: React.FC = () => {
             onShowHowWeWork={() => setShowApproach(true)}
             onShowFAQ={() => setShowFAQ(true)}
             onShowHistory={() => setShowHistory(true)}
+            isAuthenticated={isAuthenticated}
+            user={user}
+            onLogin={() => setShowAuth(true)}
+            onLogout={logout}
           />
 
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<Home isDarkMode={isDarkMode} />} />
             <Route path="/report/:address" element={<Report isDarkMode={isDarkMode} />} />
           </Routes>
 
@@ -196,6 +214,9 @@ const App: React.FC = () => {
               </Box>
             </Fade>
           )}
+
+          {/* Auth Modal */}
+          <AuthModal open={showAuth} onClose={() => setShowAuth(false)} isDarkMode={isDarkMode} />
         </PageWrapper>
       </ThemeProvider>
     </QueryClientProvider>

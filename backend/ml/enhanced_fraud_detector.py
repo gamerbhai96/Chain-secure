@@ -36,14 +36,11 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 import xgboost as xgb
 import lightgbm as lgb
-# Temporarily disable imbalanced-learn due to compatibility issues with scikit-learn 1.8.0
-# from imblearn.over_sampling import SMOTE, BorderlineSMOTE, ADASYN
-# from imblearn.under_sampling import RandomUnderSampler, EditedNearestNeighbours
-# from imblearn.combine import SMOTETomek
-# from imblearn.pipeline import Pipeline as ImbPipeline
-
-# Fallback: Use regular sklearn pipeline
-from sklearn.pipeline import Pipeline as ImbPipeline
+from imblearn.over_sampling import SMOTE, BorderlineSMOTE, ADASYN
+from imblearn.under_sampling import RandomUnderSampler, EditedNearestNeighbours
+from imblearn.combine import SMOTETomek
+from imblearn.pipeline import Pipeline as ImbPipeline
+from .feature_extraction import BitcoinFeatureExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +60,9 @@ class EnhancedFraudDetector:
                 self.model_path = "data/models"
         else:
             self.model_path = model_path
+        self.feature_extractor = BitcoinFeatureExtractor()
+        self.model_feature_names = None
+        self.known_fraud_addresses = self._load_known_fraud_addresses()
         self.models = {}
         self.scalers = {}
         self.model_metrics = {}
@@ -165,7 +165,7 @@ class EnhancedFraudDetector:
             max_features='sqrt',
             class_weight='balanced_subsample',
             random_state=42,
-            n_jobs=-1,
+            n_jobs=1,
             bootstrap=True,
             oob_score=True
         )
@@ -182,7 +182,7 @@ class EnhancedFraudDetector:
             reg_alpha=0.1,
             reg_lambda=0.1,
             random_state=42,
-            n_jobs=-1,
+            n_jobs=1,
             eval_metric='logloss'
         )
         
@@ -196,7 +196,7 @@ class EnhancedFraudDetector:
             colsample_bytree=0.8,
             class_weight='balanced',
             random_state=42,
-            n_jobs=-1,
+            n_jobs=1,
             verbose=-1
         )
         
@@ -225,7 +225,7 @@ class EnhancedFraudDetector:
             bootstrap=True,
             class_weight='balanced_subsample',
             random_state=42,
-            n_jobs=-1
+            n_jobs=1
         )
         
         # 4. Gradient Boosting (missing earlier, added here before ensembles)
@@ -247,7 +247,7 @@ class EnhancedFraudDetector:
             max_features=1.0,
             bootstrap=True,
             random_state=42,
-            n_jobs=-1
+            n_jobs=1
         )
         
         # Initialize ensemble weights for dynamic weighting
@@ -258,7 +258,8 @@ class EnhancedFraudDetector:
             'neural_network': 0.20,
             'extra_trees': 0.15,
             'isolation_forest': 0.10,
-            'gradient_boost': 0.20
+            'gradient_boost': 0.20,
+            'logistic': 0.15
         }
         
         # Create advanced stacked ensemble
@@ -284,14 +285,14 @@ class EnhancedFraudDetector:
             estimators=base_estimators,
             voting='soft',
             weights=[0.22, 0.22, 0.16, 0.22, 0.18],
-            n_jobs=-1
+            n_jobs=1
         )
         
         # Level 2: Meta-learner for stacked ensemble
         self.models['stacking_meta'] = LogisticRegression(
             C=1.0,
             class_weight='balanced',
-            max_iter=200,
+            max_iter=5000,
             random_state=42
         )
         
@@ -373,7 +374,7 @@ class EnhancedFraudDetector:
         self.models['ensemble'] = VotingClassifier(
             estimators=estimators,
             weights=[0.25, 0.25, 0.20, 0.15, 0.15],  # Optimized weights
-            n_jobs=-1
+            n_jobs=1
         )
     
 
@@ -384,69 +385,106 @@ class EnhancedFraudDetector:
         """
         return self._extract_features(analysis_result)
     
-    def _extract_features(self, analysis_result: Dict[str, Any]) -> np.ndarray:
-        """Extract exactly 20 features for enhanced fraud detection"""
-        features = []
-        basic_metrics = analysis_result.get('basic_metrics', {})
+    def _get_feature_names(self) -> List[str]:
+        """Return the names of the 20 features used in the model"""
+        return [
+            'total_received_btc', 'total_sent_btc', 'balance_btc', 'transaction_count',
+            'log_total_received', 'log_total_sent', 'log_transaction_count',
+            'sent_received_ratio', 'balance_received_ratio', 'activity_span_days',
+            'avg_tx_size', 'volume_diff', 'rapid_movements', 'round_amounts',
+            'high_value_single_tx', 'dormant_then_active', 'tx_per_day',
+            'high_activity', 'quick_exit', 'low_retention'
+        ]
+
+    def _calculate_feature_vector(self, data: Dict[str, Any]) -> np.ndarray:
+        """Centralized logic to calculate the 20-feature vector from raw metrics"""
+        total_received = float(data.get('total_received_btc', 0))
+        total_sent = float(data.get('total_sent_btc', 0))
+        balance = float(data.get('balance_btc', 0))
+        tx_count = float(data.get('transaction_count', 0))
+        activity_days = float(data.get('activity_span_days', 1))
         
-        # 1. Core transaction features (7 features)
-        total_received = basic_metrics.get('total_received_btc', 0)
-        total_sent = basic_metrics.get('total_sent_btc', 0)
-        balance = basic_metrics.get('balance_btc', 0)
-        tx_count = basic_metrics.get('transaction_count', 0)
+        # 1-4: Basic
+        features = [total_received, total_sent, balance, tx_count]
         
+        # 5-7: Log transforms
         features.extend([
-            float(total_received),
-            float(total_sent),
-            float(balance),
-            float(tx_count),
-            float(np.log1p(total_received)),  # Log transform
+            float(np.log1p(total_received)),
             float(np.log1p(total_sent)),
             float(np.log1p(tx_count))
         ])
         
-        # 2. Ratio features (2 features)
-        if total_received > 0:
-            features.extend([
-                float(total_sent / total_received),  # Send/Receive ratio
-                float(balance / total_received),     # Balance retention ratio
-            ])
-        else:
-            features.extend([0.0, 0.0])
+        # 8-9: Ratios
+        sent_rec_ratio = total_sent / (total_received + 1e-8)
+        bal_rec_ratio = balance / (total_received + 1e-8)
+        features.extend([sent_rec_ratio, bal_rec_ratio])
         
-        # 3. Address features (4 features)
-        address = analysis_result.get('address', '')
-        features.extend([
-            float(len(address)),  # Address length
-            float(1 if address.startswith('1') else 0),  # P2PKH
-            float(1 if address.startswith('3') else 0),  # P2SH  
-            float(1 if address.startswith('bc1') else 0)  # Bech32
-        ])
+        # 10: Activity span
+        features.append(activity_days)
         
-        # 4. Temporal features (3 features)
-        from datetime import datetime
-        now = datetime.now()
-        features.extend([
-            float(now.hour),
-            float(now.weekday()),
-            float(now.month)
-        ])
+        # 11-12: Derived
+        features.append(float((total_received + total_sent) / max(tx_count, 1))) # avg_tx_size
+        features.append(float(abs(total_received - total_sent))) # volume_diff
         
-        # 5. Additional derived features (4 features)
-        features.extend([
-            float((total_received + total_sent) / max(tx_count, 1)),  # Avg transaction size
-            float(abs(total_received - total_sent)),  # Volume difference
-            float(1 if tx_count > 100 else 0),  # High activity flag
-            float(1 if total_sent > total_received * 0.95 else 0)  # High spending flag
-        ])
+        # 13-16: Indicators
+        features.append(float(data.get('rapid_movements', 0)))
+        features.append(float(data.get('round_amounts', 0)))
+        features.append(float(data.get('high_value_single_tx', 0)))
+        features.append(float(data.get('dormant_then_active', 0)))
         
-        # Ensure exactly 20 features
-        while len(features) < 20:
-            features.append(0.0)
+        # 17: tx_per_day
+        features.append(tx_count / (activity_days + 1))
         
-        features = features[:20]  # Truncate if needed
+        # 18-20: Flags
+        features.append(float(tx_count > 100))
+        features.append(float(activity_days < 7))
+        features.append(float(bal_rec_ratio < 0.1))
         
         return np.array(features, dtype=np.float32)
+
+    def _extract_features(self, analysis_result: Dict[str, Any]) -> np.ndarray:
+        """Extract features for fraud detection, supporting both legacy 20-feature and enhanced 60+ feature modes"""
+        # If we have specific feature names from loaded models, use the BitcoinFeatureExtractor
+        if self.model_feature_names:
+            try:
+                features_all = self.feature_extractor.extract_features_from_analysis(analysis_result)
+                
+                # Sub-select only the features expected by the model using name mapping
+                feature_indices = []
+                for name in self.model_feature_names:
+                    if name in self.feature_extractor.feature_names:
+                        feature_indices.append(self.feature_extractor.feature_names.index(name))
+                    else:
+                        # Use a zero if feature is missing from extractor
+                        feature_indices.append(-1) 
+                
+                if any(idx != -1 for idx in feature_indices):
+                    # Construct feature vector with zeros for missing features
+                    final_features = np.zeros(len(feature_indices))
+                    for i, idx in enumerate(feature_indices):
+                        if idx != -1:
+                            final_features[i] = features_all[idx]
+                    return final_features
+            except Exception as e:
+                logger.error(f"Failed to extract advanced features: {e}. Falling back to 20-feature mode.")
+
+        # Legacy 20-feature extraction (fallback)
+        basic_metrics = analysis_result.get('basic_metrics', {})
+        transaction_patterns = analysis_result.get('transaction_patterns', {})
+        temporal_analysis = analysis_result.get('temporal_analysis', {})
+        
+        data = {
+            'total_received_btc': basic_metrics.get('total_received_btc', 0),
+            'total_sent_btc': basic_metrics.get('total_sent_btc', 0),
+            'balance_btc': basic_metrics.get('balance_btc', 0),
+            'transaction_count': basic_metrics.get('transaction_count', 0),
+            'activity_span_days': temporal_analysis.get('transaction_frequency', {}).get('time_span_days', 1),
+            'rapid_movements': transaction_patterns.get('rapid_movement_count', 0),
+            'round_amounts': transaction_patterns.get('amount_statistics', {}).get('round_amounts', 0),
+            'high_value_single_tx': 1 if basic_metrics.get('total_received_btc', 0) > 10 else 0,
+            'dormant_then_active': 1 if basic_metrics.get('balance_btc', 0) < 0.1 and basic_metrics.get('total_received_btc', 0) > 1 else 0
+        }
+        return self._calculate_feature_vector(data)
     
     def _extract_temporal_features(self, address: str) -> List[float]:
         """Extract time-based features"""
@@ -759,34 +797,31 @@ class EnhancedFraudDetector:
             return self._fallback_prediction(analysis_result)
         
     def _is_model_fitted(self, model, model_name: str) -> bool:
-        """Check if a model is properly fitted"""
+        """Check if a model is properly fitted using scikit-learn standards"""
+        from sklearn.utils.validation import check_is_fitted
         try:
             # Special handling for different model types
-            if model_name == 'isolation_forest':
-                # Check for IsolationForest fitted attributes
-                return hasattr(model, 'offset_') or hasattr(model, 'n_features_in_')
-            elif model_name == 'ensemble':
+            if model_name == 'ensemble':
                 # Check if VotingClassifier is fitted
                 return hasattr(model, 'estimators_') and getattr(model, 'estimators_', None) is not None and len(getattr(model, 'estimators_', [])) > 0
-            elif model_name in ['lightgbm', 'enhanced_xgb']:
-                # Check for LightGBM/XGBoost fitted attributes
-                return hasattr(model, 'n_features_in_') or hasattr(model, 'booster_') or hasattr(model, '_Booster')
-            elif hasattr(model, 'predict_proba'):
-                # For scikit-learn models, try a dummy prediction
-                dummy_features = np.zeros((1, 20))  # Assuming 20 features
-                try:
-                    model.predict_proba(dummy_features)
+            
+            # Generic scikit-learn check
+            try:
+                check_is_fitted(model)
+                return True
+            except:
+                # Additional check for LightGBM/XGBoost/IsolationForest
+                fitted_attrs = ['n_features_in_', 'booster_', '_Booster', 'offset_', 'tree_', 'estimators_', 'coef_']
+                if any(hasattr(model, attr) for attr in fitted_attrs):
+                    # For LightGBM specifically, sometimes it needs a dummy prediction to confirm
+                    if model_name == 'lightgbm' and hasattr(model, 'predict'):
+                        n_features = len(self.model_feature_names) if self.model_feature_names else 20
+                        model.predict(np.zeros((1, n_features)))
                     return True
-                except:
-                    return False
-            else:
-                # For other models, check common fitted attributes
-                fitted_attrs = ['coef_', 'feature_importances_', 'tree_', 'estimators_', '_fitted', 'n_features_in_']
-                return any(hasattr(model, attr) for attr in fitted_attrs)
+                return False
         except Exception as e:
-            logger.warning(f"Error checking if model {model_name} is fitted: {e}")
-            # If we can't determine, assume it's fitted to avoid skipping valid models
-            return True
+            # logger.debug(f"Error checking if model {model_name} is fitted: {e}")
+            return False 
 
     def _quick_fit_minimal_models(self, n_features: int = 20, n_samples: int = 300) -> None:
         """Quickly fit core models on a small synthetic dataset to enable predictions.
@@ -902,10 +937,24 @@ class EnhancedFraudDetector:
         fraud_score = fraud_signals.get('overall_fraud_score', 0)
         
         if fraud_score > 0:
-            # Amplify the probability when fraud signals are detected
-            boost_factor = 1.0 + (fraud_score * 0.8)  # Up to 80% boost
+            # Stronger amplification when blockchain fraud signals are detected
+            # The blockchain analyzer already did deep signal detection, so trust it
+            boost_factor = 1.0 + (fraud_score * 1.5)  # Up to 150% boost
             result = min(result * boost_factor, 0.99)
+            
+            # If fraud score is high (>0.5), ensure minimum probability floor
+            if fraud_score > 0.5:
+                result = max(result, fraud_score * 0.8)  # Floor at 80% of fraud score
+            elif fraud_score > 0.3:
+                result = max(result, fraud_score * 0.6)  # Floor at 60% of fraud score
+                
             logger.info(f"Fraud signal boost applied: {fraud_score:.2f} -> probability boosted to {result:.2f}")
+        
+        # Also check for specific fraud flags from blockchain analysis
+        if fraud_signals.get('mixing_service_usage'):
+            result = max(result, 0.6)
+        if fraud_signals.get('rapid_fund_movement') and fraud_signals.get('high_fan_out'):
+            result = max(result, 0.55)
         
         return max(0.01, min(0.99, result))  # Ensure reasonable bounds
     
@@ -1091,34 +1140,55 @@ class EnhancedFraudDetector:
         return risk_factors, positive_indicators
     
     def _adjust_probability_for_legitimate_wallets(self, probability: float, analysis_result: Dict[str, Any]) -> float:
-        """Adjust probability to reduce false positives for known legitimate wallet patterns"""
+        """Adjust probability to reduce false positives for known legitimate wallet patterns.
+        
+        IMPORTANT: Only apply dampening when MULTIPLE strong legitimacy signals are confirmed.
+        A single metric (e.g., high volume) is NOT sufficient — large-scale scams also have high volume.
+        """
         basic_metrics = analysis_result.get('basic_metrics', {})
         transaction_count = basic_metrics.get('transaction_count', 0)
         total_received = basic_metrics.get('total_received_btc', 0)
         total_sent = basic_metrics.get('total_sent_btc', 0)
         balance = basic_metrics.get('balance_btc', 0)
-        address = analysis_result.get('address', '')
+        fraud_signals = analysis_result.get('fraud_signals', {})
         
-        # Patterns that indicate legitimate wallets
+        # If blockchain analysis already found fraud signals, do NOT dampen
+        fraud_score = fraud_signals.get('overall_fraud_score', 0)
+        if fraud_score > 0.3:
+            return probability  # Trust the blockchain analysis
+        
+        # Count confirmed legitimacy signals (need multiple)
+        legitimacy_signals = 0
+        
+        # Signal 1: High balance retention (>20% retained = not draining funds)
+        if total_received > 0 and balance / total_received > 0.2:
+            legitimacy_signals += 1
+        
+        # Signal 2: Long activity history (temporal analysis shows sustained activity)
+        temporal = analysis_result.get('temporal_analysis', {})
+        time_span = temporal.get('transaction_frequency', {}).get('time_span_days', 0)
+        if time_span > 365:  # Active for over a year
+            legitimacy_signals += 1
+        
+        # Signal 3: High transaction count with reasonable turnover
+        if transaction_count > 500 and 0.3 <= (total_sent / max(total_received, 1)) <= 1.0:
+            legitimacy_signals += 1
+        
+        # Signal 4: Large balance still held (institutional/exchange)
+        if balance > 1000:
+            legitimacy_signals += 1
+        
+        # Only apply dampening if 3+ legitimacy signals confirmed
         adjustment_factor = 1.0
+        if legitimacy_signals >= 4:
+            adjustment_factor = 0.15  # Strong legitimate pattern
+        elif legitimacy_signals >= 3:
+            adjustment_factor = 0.3  # Likely legitimate
+        elif legitimacy_signals >= 2:
+            adjustment_factor = 0.6  # Moderate legitimacy
+        # 0 or 1 signals: no adjustment — could be a scam
         
-        # Ultra-high value wallets (likely exchanges/institutions)
-        if total_received > 10000 and balance > 1000:
-            adjustment_factor *= 0.1  # Reduce by 90%
-        # Very high received amount (likely legitimate high-value wallet)
-        elif total_received > 1000:
-            adjustment_factor *= 0.2  # Reduce by 80%
-        # High received amount with reasonable balance (long-term holders)
-        elif total_received > 100 and balance > 10:
-            adjustment_factor *= 0.4  # Reduce by 60%
-        # High transaction count with reasonable turnover (exchanges, services)
-        elif transaction_count > 500 and 0.1 <= (total_sent / max(total_received, 1)) <= 10:
-            adjustment_factor *= 0.3  # Reduce by 70%
-        
-        # Apply adjustment
         adjusted_prob = probability * adjustment_factor
-        
-        # Ensure we don't go too low (minimum 0.01 for adjusted predictions)
         return max(0.01, min(adjusted_prob, probability))
     
     def _adjust_probability_for_false_positives(self, probability: float, analysis_result: Dict[str, Any]) -> float:
@@ -1284,6 +1354,24 @@ class EnhancedFraudDetector:
         try:
             address = analysis_result.get('address', 'unknown')
             
+            # Step 0: Check against known fraud database for instant high-confidence detection
+            if address in self.known_fraud_addresses:
+                logger.info(f"🚩 ADDRESS {address} MATCHED KNOWN FRAUD DATABASE")
+                return {
+                    'address': address,
+                    'fraud_probability': 1.0,
+                    'risk_level': 'CRITICAL',
+                    'confidence': 1.0,
+                    'reasoning': 'Address identified as a known fraudulent address in our global threat intelligence database.',
+                    'model_used': 'threat_intelligence_db',
+                    'risk_factors_detected': 100,
+                    'risk_details': ['MATCH: Known Fraudulent Address', 'Global Threat Intelligence Hit'],
+                    'analysis_type': 'threat_intelligence',
+                    'pattern_matches': 1,
+                    'enhanced_analysis': True,
+                    'timestamp': datetime.now().isoformat()
+                }
+            
             # Step 1: Get ML model predictions (if available)
             ml_predictions = {}
             ml_confidences = {}
@@ -1417,27 +1505,29 @@ class EnhancedFraudDetector:
             return self.enhanced_fraud_analysis(analysis_result)
 
     def _fallback_prediction(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Enhanced fallback prediction with better risk analysis for minimal data"""
+        """Enhanced fallback prediction that integrates blockchain fraud signals when available.
+        Uses heuristic analysis PLUS any fraud signals from the blockchain analyzer."""
         basic_metrics = analysis_result.get('basic_metrics', {})
         transaction_count = basic_metrics.get('transaction_count', 0)
         total_received = basic_metrics.get('total_received_btc', 0)
         total_sent = basic_metrics.get('total_sent_btc', 0)
         balance = basic_metrics.get('balance_btc', 0)
         address = analysis_result.get('address', 'unknown')
+        fraud_signals = analysis_result.get('fraud_signals', {})
         
-        # Enhanced heuristic analysis with address entropy
         risk_factors = 0
         risk_score = 0.0
         risk_details = []
+        risk_factor_list = []
+        positive_indicators = []
         
-        # Special handling for known legitimate addresses (top 100 richest wallets)
+        # Special handling for known legitimate addresses
         known_legitimate_patterns = [
             '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',  # Genesis block
             '3D2oetD6WYfuLbNry3bD9H92yNsjBjK3zf',  # Satoshi's wallet
             '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2',  # Satoshi's wallet
         ]
         
-        # Check if address matches known legitimate patterns
         is_known_legitimate = any(pattern in address for pattern in known_legitimate_patterns)
         
         if is_known_legitimate:
@@ -1445,48 +1535,73 @@ class EnhancedFraudDetector:
             risk_level = 'VERY_LOW'
             reasoning = "Known legitimate wallet address"
             risk_details.append("Recognized as legitimate wallet")
+            positive_indicators.append('Known legitimate address')
         elif transaction_count == 0 and total_received == 0:
-            # Empty address - cannot assess risk
             risk_score = 0.0
             risk_level = 'UNKNOWN'
-            reasoning = "Empty address with no transaction history - insufficient data for risk assessment"
-            risk_details.append("No transaction activity - cannot determine risk")
+            reasoning = "Empty address with no transaction history"
+            risk_details.append("No transaction activity")
         else:
-            # Activity-based assessment
-            base_score = 0.15  # Base risk for active addresses
+            # Start with blockchain fraud signals if available
+            blockchain_fraud_score = fraud_signals.get('overall_fraud_score', 0)
+            base_score = max(0.10, blockchain_fraud_score * 0.7)  # Use 70% of blockchain score as base
             
-            # High activity risk (but not for known high-volume legitimate addresses)
-            if transaction_count > 1000:
+            # Integrate specific blockchain fraud flags
+            if fraud_signals.get('mixing_service_usage'):
                 risk_factors += 1
-                base_score += 0.2
-                risk_details.append(f"High transaction count ({transaction_count})")
-            
-            # High turnover risk
-            if total_received > 0 and total_sent / total_received > 0.95:
-                risk_factors += 1
-                base_score += 0.25
-                risk_details.append(f"High turnover ratio ({total_sent/total_received:.2%})")
-            
-            # Low retention risk (but not for exchange wallets which typically have low retention)
-            if total_received > 10.0 and balance / total_received < 0.05:
+                base_score += 0.20
+                risk_factor_list.append('Mixing service usage detected')
+            if fraud_signals.get('rapid_fund_movement'):
                 risk_factors += 1
                 base_score += 0.15
+                risk_factor_list.append('Rapid fund movement pattern')
+            if fraud_signals.get('high_fan_out'):
+                risk_factors += 1
+                base_score += 0.10
+                risk_factor_list.append('High fan-out transaction pattern')
+            if fraud_signals.get('burst_activity'):
+                risk_factors += 1
+                base_score += 0.05
+                risk_factor_list.append('Burst activity detected')
+            
+            # Also include detailed flags from blockchain analysis
+            detailed_flags = fraud_signals.get('detailed_flags', [])
+            for flag in detailed_flags:
+                if 'turnover' in flag.lower() or 'drainage' in flag.lower():
+                    risk_factors += 1
+                    base_score += 0.10
+                    risk_factor_list.append(flag)
+                elif 'retention' in flag.lower():
+                    risk_factors += 1
+                    base_score += 0.08
+                    risk_factor_list.append(flag)
+            
+            # Heuristic analysis on basic metrics
+            if transaction_count > 1000:
+                risk_factors += 1
+                base_score += 0.10
+                risk_details.append(f"High transaction count ({transaction_count})")
+            
+            if total_received > 0 and total_sent / total_received > 0.95:
+                risk_factors += 1
+                base_score += 0.15
+                risk_details.append(f"High turnover ratio ({total_sent/total_received:.2%})")
+            
+            if total_received > 10.0 and balance / total_received < 0.05:
+                risk_factors += 1
+                base_score += 0.10
                 risk_details.append(f"Very low balance retention ({balance/total_received:.2%})")
             
-            # Large volume risk (but not for known high-value legitimate addresses)
-            if total_received > 1000:
-                risk_factors += 1
-                base_score += 0.1
-                risk_details.append(f"High volume ({total_received:.2f} BTC)")
+            # Positive indicators
+            if total_received > 0 and balance / total_received > 0.3:
+                positive_indicators.append('Healthy balance retention')
+            if transaction_count > 10 and transaction_count < 500:
+                positive_indicators.append('Normal transaction volume')
             
-            # Address entropy variation for consistency
-            entropy = (hash(address) % 1000) / 1000.0
-            risk_score = base_score + (entropy * 0.15 - 0.075)  # ±7.5% variation
+            # Bound the score
+            risk_score = max(0.05, min(0.90, base_score))
             
-            # Ensure reasonable bounds
-            risk_score = max(0.05, min(0.75, risk_score))
-            
-            # More granular risk level determination
+            # Determine risk level
             if risk_score > 0.65:
                 risk_level = 'HIGH'
                 reasoning = f"Multiple risk factors detected ({risk_factors} indicators)"
@@ -1495,23 +1610,27 @@ class EnhancedFraudDetector:
                 reasoning = f"Some risk indicators present ({risk_factors} factors)"
             elif risk_score > 0.25:
                 risk_level = 'LOW'
-                reasoning = f"Minor risk factors identified ({risk_factors} indicators)"
+                reasoning = f"Minor risk factors ({risk_factors} indicators)"
             elif risk_score > 0.10:
                 risk_level = 'MINIMAL'
-                reasoning = "Minimal data - low confidence assessment"
+                reasoning = "Minimal risk indicators"
             else:
                 risk_level = 'VERY_LOW'
-                reasoning = "Very limited data available"
+                reasoning = "Very limited risk indicators"
         
-        # Calculate dynamic confidence based on available data
+        # Dynamic confidence based on available data quality
         if transaction_count > 100:
-            confidence = 0.65  # Higher confidence with more data
+            confidence = 0.70
         elif transaction_count > 10:
             confidence = 0.55
         elif transaction_count > 0:
             confidence = 0.45
         else:
-            confidence = 0.30  # Lower confidence for empty addresses
+            confidence = 0.30
+        
+        # Boost confidence if we had blockchain fraud signals (more data = higher confidence)
+        if fraud_signals.get('overall_fraud_score', 0) > 0:
+            confidence = min(0.85, confidence + 0.15)
         
         return {
             'address': address,
@@ -1524,7 +1643,10 @@ class EnhancedFraudDetector:
             'data_limited': True,
             'risk_factors_detected': risk_factors,
             'risk_details': risk_details,
-            'analysis_type': 'minimal_data_heuristic',
+            'risk_factors': risk_factor_list + risk_details,
+            'positive_indicators': positive_indicators,
+            'analysis_type': 'blockchain_signal_enhanced_heuristic',
+            'is_fraud_predicted': risk_score > 0.5,
             'timestamp': datetime.now().isoformat()
         }
     
@@ -1580,19 +1702,44 @@ class EnhancedFraudDetector:
                 logger.error(f"Error initializing fallback models: {str(e)}")
                 # If even fallback fails, we'll let the caller handle it
         
-        if enhanced_model_path.exists():
-            try:
-                self._load_enhanced_models()
-                logger.info("✅ Enhanced fraud detection models loaded successfully")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to load enhanced models: {e}")
-                logger.info("Will use base models for now. Run training to create enhanced models.")
-        else:
-            logger.info("Enhanced models not found. Optimizing hyperparameters and training models...")
-            self._optimize_hyperparameters()
-            self.train_enhanced_models()
+        # Try to load models (bundle or individual files)
+        models_loaded = False
+        try:
+            self._load_enhanced_models()
+            # Check if we actually loaded any models and if they are fitted
+            if self.models:
+                fitted_count = 0
+                for name, model in self.models.items():
+                    if self._is_model_fitted(model, name):
+                        fitted_count += 1
+                
+                if fitted_count > 0:
+                    logger.info(f"✅ {fitted_count} enhanced fraud detection models loaded successfully")
+                    models_loaded = True
+        except Exception as e:
+            logger.warning(f"⚠️ Error during model loading: {e}")
+
+        if not models_loaded:
+            logger.info("Enhanced models not found or failed to load. Starting background training thread...")
+            import threading
             
-    def _optimize_hyperparameters(self):
+            def run_training():
+                try:
+                    logger.info("🚀 Background training started...")
+                    # Speed up optimization for initial run
+                    self._run_initial_optimization()
+                    self.train_enhanced_models()
+                    logger.info("✅ Enhanced models trained and saved successfully in background")
+                except Exception as e:
+                    logger.error(f"❌ Background training failed: {e}")
+                    logger.info("Using baseline models as fallback.")
+
+            training_thread = threading.Thread(target=run_training)
+            training_thread.daemon = True
+            training_thread.start()
+            logger.info("📡 Background training thread launched. Backend is now starting.")
+            
+    def _run_initial_optimization(self):
         """
         Perform Bayesian optimization for hyperparameter tuning
         Uses stratified cross-validation for imbalanced datasets
@@ -1666,10 +1813,10 @@ class EnhancedFraudDetector:
             search = RandomizedSearchCV(
                 estimator=self.models[model_name],
                 param_distributions=param_space,
-                n_iter=10,  # Number of parameter settings sampled
+                n_iter=3,  # Reduced from 10 to 3 for faster startup
                 cv=cv,
                 scoring='roc_auc',  # AUC is better for imbalanced data
-                n_jobs=-1,
+                n_jobs=1,
                 random_state=42
             )
             
@@ -1798,46 +1945,89 @@ class EnhancedFraudDetector:
             return None
             
     def _generate_synthetic_dataset(self):
-        """
-        Generate synthetic data for training when real datasets are not available
-        Returns synthetic features and labels
-        """
-        logger.info("Generating synthetic training data with realistic blockchain patterns")
-        
-        # Number of samples
-        n_samples = 1000
-        n_features = 45  # Match the number of features in BitcoinFeatureExtractor
-        
-        # Generate synthetic features
-        X = np.random.rand(n_samples, n_features)
-        
-        # Generate synthetic labels (imbalanced, ~10% fraudulent)
-        y = np.zeros(n_samples)
-        fraud_indices = np.random.choice(n_samples, size=int(n_samples * 0.1), replace=False)
-        y[fraud_indices] = 1
-        
-        # Add some patterns to make fraudulent transactions more realistic
-        for idx in fraud_indices:
-            # Higher values for suspicious behavior indicators
-            X[idx, 30:35] = np.random.uniform(0.7, 0.95, 5)
-            
-            # Lower values for legitimacy indicators
-            X[idx, 35:40] = np.random.uniform(0.05, 0.3, 5)
-        
-        return X, y
+        """Generate synthetic dataset for training (unified)"""
+        logger.info("Generating synthetic training data with unified 20-feature format")
+        df = self._generate_advanced_training_data()
+        return self._prepare_training_features(df)
                 
         logger.info("Hyperparameter optimization completed")
     
+    def _load_known_fraud_addresses(self) -> List[str]:
+        """Load known fraud addresses from database"""
+        try:
+            fraud_file = Path("data/known_fraud_addresses.json")
+            if fraud_file.exists():
+                with open(fraud_file, 'r') as f:
+                    return json.load(f)
+            return []
+        except Exception as e:
+            logger.warning(f"Failed to load known fraud addresses: {e}")
+            return []
+    
     def _load_enhanced_models(self):
-        """Load pre-trained enhanced models"""
-        enhanced_model_path = Path(self.model_path) / "enhanced_fraud_detector.pkl"
+        """Load pre-trained enhanced models from individual files or a single bundle"""
+        bundle_path = Path(self.model_path) / "enhanced_fraud_detector.pkl"
+        metadata_path = Path(self.model_path) / "metadata.json"
         
-        if enhanced_model_path.exists():
-            model_data = joblib.load(enhanced_model_path)
-            self.models.update(model_data.get('models', {}))
-            self.best_scaler = model_data.get('scaler')
-            self.model_metrics = model_data.get('metrics', {})
-            logger.info("Enhanced models loaded from disk")
+        # Priority 1: Load from bundle if it exists
+        if bundle_path.exists():
+            try:
+                model_data = joblib.load(bundle_path)
+                self.models.update(model_data.get('models', {}))
+                self.best_scaler = model_data.get('scaler')
+                self.model_metrics = model_data.get('metrics', {})
+                logger.info("✅ Enhanced fraud detection bundle loaded from disk")
+                return
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load enhanced bundle: {e}")
+
+        # Priority 2: Load individual models from joblib files
+        models_to_load = {
+            'enhanced_rf': 'random_forest.joblib',
+            'enhanced_xgb': 'xgboost.joblib',
+            'logistic': 'logistic.joblib',
+            'isolation_forest': 'isolation_forest.joblib'
+        }
+        
+        loaded_count = 0
+        for model_key, filename in models_to_load.items():
+            model_file = Path(self.model_path) / filename
+            if model_file.exists():
+                try:
+                    self.models[model_key] = joblib.load(model_file)
+                    loaded_count += 1
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to load model {model_key}: {e}")
+        
+        # Load scalers if they exist
+        scalers_to_load = {
+            'standard': 'standard.joblib',
+            'robust': 'robust.joblib',
+            'logistic': 'logistic_scaler.joblib'
+        }
+        for scaler_key, filename in scalers_to_load.items():
+            scaler_file = Path(self.model_path) / filename
+            if scaler_file.exists():
+                try:
+                    self.scalers[scaler_key] = joblib.load(scaler_file)
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to load scaler {scaler_key}: {e}")
+
+        # Load metadata and feature names
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                    self.model_metrics = metadata.get('model_metrics', {})
+                    self.model_feature_names = metadata.get('feature_names', [])
+                    logger.info(f"✅ Loaded model metadata with {len(self.model_feature_names)} features")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load metadata: {e}")
+
+        if loaded_count > 0:
+            logger.info(f"✅ Loaded {loaded_count} individual enhanced models from {self.model_path}")
+        else:
+            logger.warning(f"⚠️ No enhanced models found in {self.model_path}")
     
     def train_enhanced_models(self, real_world_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
         """Train enhanced models with real-world crypto scam data and advanced techniques"""
@@ -1938,7 +2128,7 @@ class EnhancedFraudDetector:
                 self.models['ensemble'] = VotingClassifier(
                     estimators=trained_estimators,
                     voting='soft',
-                    n_jobs=-1
+                    n_jobs=1
                 )
                 # Fit the ensemble model
                 self.models['ensemble'].fit(X_train_scaled, y_train)
@@ -2506,41 +2696,12 @@ class EnhancedFraudDetector:
         }
     
     def _prepare_training_features(self, training_data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare features and labels for training"""
-        # Extract features
-        feature_columns = [
-            'total_received_btc', 'total_sent_btc', 'balance_btc', 'transaction_count',
-            'activity_span_days', 'rapid_movements', 'round_amounts', 
-            'high_value_single_tx', 'dormant_then_active'
-        ]
-        
-        # Add derived features
-        training_data['log_total_received'] = np.log1p(training_data['total_received_btc'])
-        training_data['log_total_sent'] = np.log1p(training_data['total_sent_btc'])
-        training_data['log_transaction_count'] = np.log1p(training_data['transaction_count'])
-        
-        # Ratio features
-        training_data['sent_received_ratio'] = training_data['total_sent_btc'] / (training_data['total_received_btc'] + 1e-8)
-        training_data['balance_received_ratio'] = training_data['balance_btc'] / (training_data['total_received_btc'] + 1e-8)
-        training_data['tx_per_day'] = training_data['transaction_count'] / (training_data['activity_span_days'] + 1)
-        
-        # Statistical features
-        training_data['velocity'] = training_data['total_received_btc'] / (training_data['activity_span_days'] + 1)
-        training_data['turnover'] = (training_data['total_sent_btc'] + training_data['total_received_btc']) / 2
-        
-        # Pattern indicators
-        training_data['high_activity'] = (training_data['transaction_count'] > 100).astype(int)
-        training_data['quick_exit'] = (training_data['activity_span_days'] < 7).astype(int)
-        training_data['low_retention'] = (training_data['balance_received_ratio'] < 0.1).astype(int)
-        
-        # Select all feature columns
-        feature_columns.extend([
-            'log_total_received', 'log_total_sent', 'log_transaction_count',
-            'sent_received_ratio', 'balance_received_ratio', 'tx_per_day',
-            'velocity', 'turnover', 'high_activity', 'quick_exit', 'low_retention'
-        ])
-        
-        X = training_data[feature_columns].values
+        """Prepare features and labels for training using the unified vector logic"""
+        X_list = []
+        for _, row in training_data.iterrows():
+            X_list.append(self._calculate_feature_vector(row.to_dict()))
+            
+        X = np.vstack(X_list)
         y = training_data['is_fraud'].values
         
         # Handle any NaN or inf values
@@ -2549,21 +2710,24 @@ class EnhancedFraudDetector:
         return X, y
     
     def _advanced_preprocessing(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Apply advanced preprocessing techniques"""
+        """Apply advanced preprocessing techniques with safety fallbacks"""
         logger.info("🔧 Applying advanced preprocessing...")
         
-        # Temporarily disabled SMOTE due to compatibility issues
-        # TODO: Re-enable when imbalanced-learn is compatible with scikit-learn 1.8.0
-        # smote = SMOTETomek(random_state=42)
-        # X_resampled, y_resampled = smote.fit_resample(X, y)
+        try:
+            # Handle class imbalance with SMOTE if enough samples are present
+            if len(np.unique(y)) > 1 and np.min(np.bincount(y)) > 6:
+                smote = SMOTETomek(random_state=42)
+                X_resampled, y_resampled = smote.fit_resample(X, y)
+                logger.info(f"Resampled data: {len(X)} -> {len(X_resampled)} samples")
+                return X_resampled, y_resampled
+            else:
+                logger.warning("Insufficient samples for SMOTE, skipping resampling")
+                return X, y
+        except Exception as e:
+            logger.warning(f"SMOTE preprocessing failed: {e}. Continuing with original data.")
+            return X, y
         
-        # For now, return original data without resampling
-        X_resampled, y_resampled = X, y
-        
-        logger.info(f"Data samples: {len(X_resampled)}")
-        logger.info(f"Class distribution: {np.bincount(y_resampled)}")
-        
-        return X_resampled, y_resampled
+        return X, y
     
     def _find_best_scaler(self, X_train: np.ndarray, y_train: np.ndarray) -> Any:
         """Find the best scaler for the data"""
@@ -2580,7 +2744,7 @@ class EnhancedFraudDetector:
         best_scaler = None
         
         # Use a simple model to test scalers
-        test_model = LogisticRegression(random_state=42, max_iter=1000)
+        test_model = LogisticRegression(random_state=42, max_iter=5000)
         
         for scaler_name, scaler in scalers.items():
             try:
@@ -2650,7 +2814,7 @@ class EnhancedFraudDetector:
             cv=3,
             scoring='f1',
             random_state=42,
-            n_jobs=-1
+            n_jobs=1
         )
         
         search.fit(X_train, y_train)

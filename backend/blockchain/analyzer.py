@@ -52,15 +52,15 @@ class BlockchainAnalyzer:
     async def analyze_address_comprehensive(self, address: str, depth: int = 3) -> Dict:
         """
         Perform comprehensive analysis of a Bitcoin address
-        Optimized for recent activity and reduced API load
+        Optimized with parallel sub-analyses for faster results
         """
         import asyncio
         
         try:
-            # Add overall timeout protection (40 seconds for better reliability)
+            # Increased timeout - parallel analysis should finish much faster
             return await asyncio.wait_for(
-                self._analyze_address_with_timeout(address, depth),
-                timeout=40.0
+                self._analyze_address_with_timeout(address, depth=min(depth, 2)),
+                timeout=120.0
             )
         except asyncio.TimeoutError:
             logger.error(f"Analysis timeout for address {address}")
@@ -69,10 +69,25 @@ class BlockchainAnalyzer:
             logger.error(f"Error in comprehensive analysis for {address}: {e}")
             return self._create_minimal_analysis_result(address, {'error': str(e)})
     
+    async def _run_sub_analysis(self, coro, name: str, default_result: Dict, timeout: float = 20.0) -> Dict:
+        """Run a sub-analysis with its own timeout. Returns default_result on failure."""
+        try:
+            result = await asyncio.wait_for(coro, timeout=timeout)
+            if isinstance(result, dict) and 'error' in result:
+                logger.warning(f"{name} returned error, using default")
+                return default_result
+            return result
+        except asyncio.TimeoutError:
+            logger.warning(f"{name} timed out after {timeout}s, using default")
+            return default_result
+        except Exception as e:
+            logger.warning(f"{name} exception: {e}, using default")
+            return default_result
+
     async def _analyze_address_with_timeout(self, address: str, depth: int = 3) -> Dict:
         """
         Perform comprehensive analysis of a Bitcoin address
-        Internal implementation with timeout protection
+        Runs independent sub-analyses in PARALLEL for much faster completion
         """
         try:
             analysis_result = {
@@ -87,14 +102,14 @@ class BlockchainAnalyzer:
                 'temporal_analysis': {},
                 'fraud_signals': {},
                 'optimization_info': {
-                    'analysis_scope': 'fast_analysis_optimized',
-                    'max_transactions_analyzed': 50,
-                    'api_call_optimization': 'aggressive_caching',
-                    'timeout': '30_seconds'
+                    'analysis_scope': 'parallel_analysis_optimized',
+                    'max_transactions_analyzed': 200,
+                    'api_call_optimization': 'parallel_with_caching',
+                    'timeout': '120_seconds'
                 }
             }
             
-            # Get basic wallet information
+            # Get basic wallet information first (needed by all sub-analyses)
             client = self._get_appropriate_client(address)
             wallet_info = await client.get_wallet_risk_indicators(address)
             
@@ -145,90 +160,64 @@ class BlockchainAnalyzer:
             analysis_result['basic_metrics'] = wallet_info.get('basic_info', {})
             analysis_result['risk_indicators'] = wallet_info.get('risk_flags', {})
             
-            # Perform transaction flow analysis (with error handling)
-            try:
-                transaction_analysis = await self._analyze_transaction_flows(address, depth)
-                if 'error' in transaction_analysis:
-                    logger.warning(f"Transaction flow analysis failed for {address}, using minimal data")
-                    transaction_analysis = {
-                        'total_transactions': 0,
-                        'flow_concentration': {'unique_input_addresses': 0, 'unique_output_addresses': 0},
-                        'rapid_movement_count': 0
-                    }
-                analysis_result['transaction_patterns'] = transaction_analysis
-            except Exception as e:
-                logger.warning(f"Transaction flow analysis exception for {address}: {e}")
-                analysis_result['transaction_patterns'] = {
-                    'total_transactions': 0,
-                    'flow_concentration': {'unique_input_addresses': 0, 'unique_output_addresses': 0},
-                    'rapid_movement_count': 0
-                }
+            # === RUN ALL INDEPENDENT SUB-ANALYSES IN PARALLEL ===
+            # This is the key optimization — these are independent API calls
+            # that previously ran sequentially, causing timeouts for active addresses.
             
-            # Network graph analysis (with error handling)
-            try:
-                network_analysis = await self._build_transaction_network(address, depth)
-                if 'error' in network_analysis:
-                    logger.warning(f"Network analysis failed for {address}, using minimal data")
-                    network_analysis = {
-                        'node_count': 1,
-                        'edge_count': 0,
-                        'centrality_measures': {'betweenness_centrality': 0.0}
-                    }
-                analysis_result['network_analysis'] = network_analysis
-            except Exception as e:
-                logger.warning(f"Network analysis exception for {address}: {e}")
-                analysis_result['network_analysis'] = {
-                    'node_count': 1,
-                    'edge_count': 0,
-                    'centrality_measures': {'betweenness_centrality': 0.0}
-                }
+            default_tx_patterns = {
+                'total_transactions': 0,
+                'flow_concentration': {'unique_input_addresses': 0, 'unique_output_addresses': 0},
+                'rapid_movement_count': 0
+            }
+            default_network = {
+                'node_count': 1,
+                'edge_count': 0,
+                'centrality_measures': {'betweenness_centrality': 0.0}
+            }
+            default_clustering = {'cluster_size': 1}
+            default_temporal = {
+                'transaction_frequency': {'average_interval_hours': 0},
+                'burst_detection': {'burst_count': 0}
+            }
             
-            # Clustering analysis (with error handling)
-            try:
-                clustering_result = await self._analyze_address_clustering(address)
-                if 'error' in clustering_result:
-                    logger.warning(f"Clustering analysis failed for {address}, using minimal data")
-                    clustering_result = {'cluster_size': 1}
-                analysis_result['clustering_analysis'] = clustering_result
-            except Exception as e:
-                logger.warning(f"Clustering analysis exception for {address}: {e}")
-                analysis_result['clustering_analysis'] = {'cluster_size': 1}
+            logger.info(f"Running parallel sub-analyses for {address} (depth={depth})")
             
-            # Temporal pattern analysis (with error handling)
-            try:
-                temporal_analysis = await self._analyze_temporal_patterns(address)
-                if 'error' in temporal_analysis:
-                    logger.warning(f"Temporal analysis failed for {address}, using minimal data")
-                    temporal_analysis = {
-                        'transaction_frequency': {'average_interval_hours': 0},
-                        'burst_detection': {'burst_count': 0}
-                    }
-                analysis_result['temporal_analysis'] = temporal_analysis
-            except Exception as e:
-                logger.warning(f"Temporal analysis exception for {address}: {e}")
-                analysis_result['temporal_analysis'] = {
-                    'transaction_frequency': {'average_interval_hours': 0},
-                    'burst_detection': {'burst_count': 0}
-                }
+            # Run all 4 independent sub-analyses concurrently
+            tx_result, network_result, clustering_result, temporal_result = await asyncio.gather(
+                self._run_sub_analysis(
+                    self._analyze_transaction_flows(address, depth),
+                    "Transaction flow analysis", default_tx_patterns, timeout=25.0
+                ),
+                self._run_sub_analysis(
+                    self._build_transaction_network(address, depth),
+                    "Network analysis", default_network, timeout=25.0
+                ),
+                self._run_sub_analysis(
+                    self._analyze_address_clustering(address),
+                    "Clustering analysis", default_clustering, timeout=20.0
+                ),
+                self._run_sub_analysis(
+                    self._analyze_temporal_patterns(address),
+                    "Temporal analysis", default_temporal, timeout=20.0
+                ),
+            )
             
-            # Fraud signal detection (with error handling)
-            try:
-                fraud_signals = await self._detect_fraud_signals(address, analysis_result)
-                if 'error' in fraud_signals:
-                    logger.warning(f"Fraud signal detection failed for {address}, using minimal data")
-                    fraud_signals = {
-                        'overall_fraud_score': 0.0,
-                        'risk_level': 'MINIMAL',
-                        'detailed_flags': ['Analysis completed with limited data']
-                    }
-                analysis_result['fraud_signals'] = fraud_signals
-            except Exception as e:
-                logger.warning(f"Fraud signal detection exception for {address}: {e}")
-                analysis_result['fraud_signals'] = {
-                    'overall_fraud_score': 0.0,
-                    'risk_level': 'MINIMAL',
-                    'detailed_flags': ['Analysis completed with limited data']
-                }
+            analysis_result['transaction_patterns'] = tx_result
+            analysis_result['network_analysis'] = network_result
+            analysis_result['clustering_analysis'] = clustering_result
+            analysis_result['temporal_analysis'] = temporal_result
+            
+            # Fraud signal detection depends on the above results, so it runs after
+            default_fraud = {
+                'overall_fraud_score': 0.0,
+                'risk_level': 'MINIMAL',
+                'detailed_flags': ['Analysis completed with limited data']
+            }
+            fraud_signals = await self._run_sub_analysis(
+                self._detect_fraud_signals(address, analysis_result),
+                "Fraud signal detection", default_fraud, timeout=10.0
+            )
+            analysis_result['fraud_signals'] = fraud_signals
             
             return analysis_result
             
