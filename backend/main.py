@@ -19,6 +19,9 @@ import sys
 parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
 
+# Apply compatibility patches for sklearn/imblearn
+import ml.sklearn_patch
+
 # Import our modules
 from api.routes import router as api_router
 from api.timeseries import router as ts_router

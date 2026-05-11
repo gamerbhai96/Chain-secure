@@ -49,6 +49,7 @@ class BlockCypherClient:
         self.cache = {}  # Simple caching to reduce API calls
         self.cache_ttl = 900  # 15 minutes cache TTL for better data freshness
         self.cache_stats = {'hits': 0, 'misses': 0}  # Cache performance tracking
+        self._request_lock = asyncio.Lock()  # Ensure rate limiting is thread-safe for parallel requests
         
     async def _make_request_with_retry(self, endpoint: str, params: Dict = None, max_retries: int = 5) -> Dict:
         """Make request with exponential backoff retry mechanism"""
@@ -86,40 +87,42 @@ class BlockCypherClient:
         else:
             self.cache_stats['misses'] += 1
         
-        # Enhanced rate limiting with exponential backoff
-        current_time = time.time()
-        time_since_last = current_time - self.last_request_time
-        
-        # Reset hourly counter if an hour has passed
-        if current_time - self.hour_start_time > 3600:  # 1 hour
-            self.hourly_request_count = 0
-            self.hour_start_time = current_time
-            logger.debug("Hourly rate limit counter reset")
-        
-        # Check if we're approaching hourly limit (180 out of 200)
-        if self.hourly_request_count >= 180:
-            logger.warning(f"⚠️  Approaching hourly limit ({self.hourly_request_count}/200 requests used). Being more conservative.")
-            # Still allow requests but with longer delays
-            await asyncio.sleep(5.0)  # 5 second delay when approaching limit
-        
-        # If we hit rate limits recently, wait longer
-        if self.rate_limit_reset_time and current_time < self.rate_limit_reset_time:
-            wait_time = self.rate_limit_reset_time - current_time
-            logger.warning(f"Still in rate limit cooldown, waiting {wait_time:.1f} seconds")
-            await asyncio.sleep(wait_time)
-        
-        if time_since_last < self.rate_limit_delay:
-            await asyncio.sleep(self.rate_limit_delay - time_since_last)
-        
-        self.request_count += 1
-        self.hourly_request_count += 1
-        
-        logger.debug(f"API Request #{self.request_count} (hourly: {self.hourly_request_count}/200)")
-        
-        # Reduced aggressive delays - only add extra delay every 10 requests
-        if self.request_count % 10 == 0 and self.request_count > 0:  # Every 10 requests
-            await asyncio.sleep(1.0)  # 1 second delay instead of 2
-            logger.debug(f"Added extra 1s delay after {self.request_count} requests")
+        # Enhanced rate limiting with a lock to ensure serial start times
+        async with self._request_lock:
+            current_time = time.time()
+            time_since_last = current_time - self.last_request_time
+            
+            # Reset hourly counter if an hour has passed
+            if current_time - self.hour_start_time > 3600:  # 1 hour
+                self.hourly_request_count = 0
+                self.hour_start_time = current_time
+                logger.debug("Hourly rate limit counter reset")
+            
+            # Check if we're approaching hourly limit (180 out of 200)
+            if self.hourly_request_count >= 180:
+                logger.warning(f"⚠️  Approaching hourly limit ({self.hourly_request_count}/200 requests used). Being more conservative.")
+                # Still allow requests but with longer delays
+                await asyncio.sleep(5.0)  # 5 second delay when approaching limit
+            
+            # If we hit rate limits recently, wait longer
+            if self.rate_limit_reset_time and current_time < self.rate_limit_reset_time:
+                wait_time = self.rate_limit_reset_time - current_time
+                logger.warning(f"Still in rate limit cooldown, waiting {wait_time:.1f} seconds")
+                await asyncio.sleep(wait_time)
+            
+            if time_since_last < self.rate_limit_delay:
+                await asyncio.sleep(self.rate_limit_delay - time_since_last)
+            
+            self.request_count += 1
+            self.hourly_request_count += 1
+            self.last_request_time = time.time()  # Update after sleep
+            
+            logger.debug(f"API Request #{self.request_count} (hourly: {self.hourly_request_count}/200)")
+            
+            # Reduced aggressive delays - only add extra delay every 10 requests
+            if self.request_count % 10 == 0 and self.request_count > 0:  # Every 10 requests
+                await asyncio.sleep(1.0)  # 1 second delay instead of 2
+                logger.debug(f"Added extra 1s delay after {self.request_count} requests")
         
         url = f"{self.base_url}{endpoint}"
         
@@ -509,14 +512,14 @@ class BlockCypherClient:
                 'depth': current_depth
             }
             
-            # Recursively analyze fewer connected addresses
+            # Recursively analyze connected addresses in parallel
+            tasks = []
             for connected_addr in list(connected_addresses)[:3]:  # Reduced from 5
                 if len(visited_addresses) < max_addresses:
-                    try:
-                        await traverse_address(connected_addr, current_depth + 1)
-                    except Exception as e:
-                        logger.warning(f"Error in recursive cluster analysis for {connected_addr}: {e}")
-                        continue
+                    tasks.append(traverse_address(connected_addr, current_depth + 1))
+            
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
         
         try:
             await traverse_address(address, 0)

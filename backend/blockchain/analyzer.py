@@ -186,19 +186,19 @@ class BlockchainAnalyzer:
             tx_result, network_result, clustering_result, temporal_result = await asyncio.gather(
                 self._run_sub_analysis(
                     self._analyze_transaction_flows(address, depth),
-                    "Transaction flow analysis", default_tx_patterns, timeout=25.0
+                    "Transaction flow analysis", default_tx_patterns, timeout=45.0
                 ),
                 self._run_sub_analysis(
                     self._build_transaction_network(address, depth),
-                    "Network analysis", default_network, timeout=25.0
+                    "Network analysis", default_network, timeout=45.0
                 ),
                 self._run_sub_analysis(
                     self._analyze_address_clustering(address),
-                    "Clustering analysis", default_clustering, timeout=20.0
+                    "Clustering analysis", default_clustering, timeout=45.0
                 ),
                 self._run_sub_analysis(
                     self._analyze_temporal_patterns(address),
-                    "Temporal analysis", default_temporal, timeout=20.0
+                    "Temporal analysis", default_temporal, timeout=30.0
                 ),
             )
             
@@ -417,10 +417,14 @@ class BlockchainAnalyzer:
                                              weight=out.get('value', 0) or 0,
                                              tx_hash=tx.get('hash', ''))
                 
-                # Recursively build for connected addresses (limited)
+                # Recursively build for connected addresses (limited) in parallel
+                tasks = []
                 connected_addresses = list(G.neighbors(addr))[:10]  # Limit to prevent explosion
                 for connected_addr in connected_addresses:
-                    await build_graph_recursive(connected_addr, current_depth + 1)
+                    tasks.append(build_graph_recursive(connected_addr, current_depth + 1))
+                
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
             
             await build_graph_recursive(address, 0)
             
