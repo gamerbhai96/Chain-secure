@@ -12,6 +12,7 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  CircularProgress,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -25,6 +26,7 @@ import { ChainSecureNav, PageWrapper } from './components/ChainSecureNav';
 import type { AnalysisResponse } from './types/api';
 import { Home } from './pages/Home';
 import { Report } from './pages/Report';
+import { News } from './pages/News';
 import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { ChainSecureAPI } from './services/api';
@@ -32,7 +34,7 @@ import { ChainSecureAPI } from './services/api';
 const queryClient = new QueryClient();
 
 const App: React.FC = () => {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, logout, loading: authLoading } = useAuth();
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [scanHistory, setScanHistory] = useState<AnalysisResponse[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -48,6 +50,8 @@ const App: React.FC = () => {
   }, [isDarkMode]);
 
   useEffect(() => {
+    if (authLoading) return;
+
     if (isAuthenticated) {
       ChainSecureAPI.getScanHistory()
         .then(({ history }) => {
@@ -60,9 +64,11 @@ const App: React.FC = () => {
       if (saved) {
         try { setScanHistory(JSON.parse(saved)); }
         catch { localStorage.removeItem('chainsecure_scans'); }
+      } else {
+        setScanHistory([]);
       }
     }
-  }, [isAuthenticated, showHistory]);
+  }, [isAuthenticated, showHistory, authLoading]);
 
   const getRiskColor = (level: string) => {
     const map: Record<string, string> = {
@@ -73,6 +79,17 @@ const App: React.FC = () => {
     };
     return map[level] || map['UNKNOWN'];
   };
+
+  if (authLoading) {
+    return (
+      <ThemeProvider theme={isDarkMode ? darkTheme : lightTheme}>
+        <CssBaseline />
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', bgcolor: 'background.default' }}>
+          <CircularProgress />
+        </Box>
+      </ThemeProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -90,10 +107,10 @@ const App: React.FC = () => {
             onLogin={() => setShowAuth(true)}
             onLogout={logout}
           />
-
           <Routes>
-            <Route path="/" element={<Home isDarkMode={isDarkMode} />} />
+            <Route path="/" element={<Home isDarkMode={isDarkMode} onLogin={() => setShowAuth(true)} />} />
             <Route path="/report/:address" element={<Report isDarkMode={isDarkMode} />} />
+            <Route path="/news" element={<News isDarkMode={isDarkMode} />} />
           </Routes>
 
           {/* ===== MODALS ===== */}

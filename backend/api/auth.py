@@ -141,6 +141,7 @@ def send_otp_email(email: str, otp_code: str, name: str = "User"):
     """Send OTP verification email via Brevo transactional API."""
     if not BREVO_API_KEY:
         logger.warning("BREVO_API_KEY not set — OTP email skipped (dev mode)")
+        print(f"\n\n{'='*40}\nDEV MODE: OTP for {email} is {otp_code}\n{'='*40}\n\n")
         return True  # Allow dev without key
 
     try:
@@ -200,6 +201,14 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(..., description="Email to send password reset OTP to")
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp_code: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=6, max_length=128)
 
 class ProfileUpdateRequest(BaseModel):
     name: Optional[str] = None
@@ -358,6 +367,85 @@ async def login(req: LoginRequest):
             "token": token,
             "user": {"id": row["id"], "name": row["name"], "email": row["email"]},
         }
+    finally:
+        conn.close()
+
+
+@router.post("/forgot-password", tags=["Auth"])
+async def forgot_password(req: ForgotPasswordRequest):
+    """Generate and send a password reset OTP to an existing user."""
+    email = req.email.lower().strip()
+    
+    conn = _get_db()
+    try:
+        user = conn.execute("SELECT name FROM users WHERE email = ?", (email,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="Email not found.")
+        
+        # Rate-limit
+        one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM otp_verifications WHERE email = ? AND created_at > ?",
+            (email, one_hour_ago),
+        ).fetchone()[0]
+        if count >= 5:
+            raise HTTPException(status_code=429, detail="Too many requests. Try again later.")
+            
+        otp_code = f"{secrets.randbelow(900000) + 100000}"
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRY_MINUTES)).isoformat()
+        
+        # Clear existing unverified OTPs for this email to avoid clutter
+        conn.execute("DELETE FROM otp_verifications WHERE email = ?", (email,))
+        
+        conn.execute(
+            "INSERT INTO otp_verifications (email, otp_code, expires_at) VALUES (?, ?, ?)",
+            (email, otp_code, expires_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+        
+    sent = send_otp_email(email, otp_code, user["name"])
+    if not sent:
+        raise HTTPException(status_code=500, detail="Failed to send email. Please try again.")
+        
+    return {"message": "Password reset OTP sent", "email": email}
+
+
+@router.post("/reset-password", tags=["Auth"])
+async def reset_password(req: ResetPasswordRequest):
+    """Reset password using verified OTP."""
+    email = req.email.lower().strip()
+    
+    conn = _get_db()
+    try:
+        user = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+            
+        otp_row = conn.execute(
+            "SELECT id, otp_code, expires_at, verified FROM otp_verifications "
+            "WHERE email = ? ORDER BY created_at DESC LIMIT 1",
+            (email,)
+        ).fetchone()
+        
+        if not otp_row:
+            raise HTTPException(status_code=400, detail="No reset request found.")
+            
+        now = datetime.now(timezone.utc).isoformat()
+        if now > otp_row["expires_at"]:
+            raise HTTPException(status_code=400, detail="OTP has expired.")
+            
+        if otp_row["otp_code"] != req.otp_code:
+            raise HTTPException(status_code=400, detail="Invalid OTP code.")
+            
+        # Proceed with password reset
+        hashed = bcrypt.hashpw(req.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        conn.execute("UPDATE users SET password = ?, updated_at = datetime('now') WHERE email = ?", (hashed, email))
+        conn.execute("DELETE FROM otp_verifications WHERE email = ?", (email,))
+        conn.commit()
+        
+        return {"message": "Password has been reset successfully"}
     finally:
         conn.close()
 

@@ -202,6 +202,16 @@ export class ChainSecureAPI {
     return response.data;
   }
 
+  static async sendResetOtp(data: { email: string }): Promise<{ message: string; email: string }> {
+    const response = await apiClient.post('/auth/forgot-password', data);
+    return response.data;
+  }
+
+  static async resetPassword(data: { email: string; otp_code: string; new_password: string }): Promise<{ message: string }> {
+    const response = await apiClient.post('/auth/reset-password', data);
+    return response.data;
+  }
+
   static async getProfile(): Promise<{ user: User }> {
     const response = await apiClient.get<{ user: User }>('/auth/me');
     return response.data;

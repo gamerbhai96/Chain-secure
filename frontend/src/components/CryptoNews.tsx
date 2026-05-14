@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Paper, Chip, Button, Skeleton, IconButton } from '@mui/material';
 import {
   TrendingUp as BullishIcon,
@@ -32,6 +33,7 @@ const sentimentConfig = {
 };
 
 export const CryptoNews: React.FC<CryptoNewsProps> = ({ isDarkMode }) => {
+  const navigate = useNavigate();
   const [articles, setArticles] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'bullish' | 'bearish'>('all');
@@ -150,9 +152,9 @@ export const CryptoNews: React.FC<CryptoNewsProps> = ({ isDarkMode }) => {
         })}
       </Box>
 
-      {filteredArticles.length > visibleCount && (
+      {articles.length > visibleCount && (
         <Box sx={{ textAlign: 'center', mt: 3 }}>
-          <Button onClick={() => setVisibleCount((c) => c + 6)} sx={{
+          <Button onClick={() => navigate('/news')} sx={{
             textTransform: 'none', fontWeight: 600, borderRadius: '12px', px: 4, color: '#60a5fa',
             border: '1px solid rgba(96,165,250,0.3)', '&:hover': { background: 'rgba(96,165,250,0.08)', borderColor: '#60a5fa' },
           }}>

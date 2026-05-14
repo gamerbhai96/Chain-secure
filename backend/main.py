@@ -9,15 +9,18 @@ from fastapi.responses import HTMLResponse
 import uvicorn
 import os
 from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
-# Add parent directory to Python path for imports (works in both dev and production)
 from pathlib import Path
 import sys
+
 parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
+
+# Load environment variables from the root .env file
+env_path = parent_dir / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+else:
+    load_dotenv()
 
 # Apply compatibility patches for sklearn/imblearn
 import ml.sklearn_patch

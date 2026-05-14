@@ -20,6 +20,8 @@ import {
   Lock as LockIcon,
   CheckCircle as CheckCircleIcon,
   ArrowBack as ArrowBackIcon,
+  Visibility as VisibilityIcon,
+  VisibilityOff as VisibilityOffIcon,
 } from '@mui/icons-material';
 import { ChainSecureAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -31,13 +33,15 @@ interface AuthModalProps {
   isDarkMode: boolean;
 }
 
-type AuthTab = 'login' | 'signup';
+type AuthTab = 'login' | 'signup' | 'forgot_password';
 type SignupStep = 'details' | 'otp' | 'success';
+type ForgotStep = 'email' | 'reset' | 'success';
 
 export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, isDarkMode }) => {
   const { login, register } = useAuth();
   const [tab, setTab] = useState<AuthTab>('login');
   const [signupStep, setSignupStep] = useState<SignupStep>('details');
+  const [forgotStep, setForgotStep] = useState<ForgotStep>('email');
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -50,12 +54,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, isDarkMode 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const passwordEndAdornment = (
+    <IconButton
+      size="small"
+      onClick={() => setShowPassword(!showPassword)}
+      edge="end"
+      sx={{ color: 'text.secondary', mr: 0.5 }}
+    >
+      {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+    </IconButton>
+  );
 
   useEffect(() => {
     if (!open) {
       setTimeout(() => {
         setTab('login');
         setSignupStep('details');
+        setForgotStep('email');
         setName('');
         setEmail('');
         setPassword('');
@@ -152,7 +169,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, isDarkMode 
     setLoading(true);
     setError(null);
     try {
-      await ChainSecureAPI.sendOtp({ email, name });
+      if (tab === 'forgot_password') {
+        await ChainSecureAPI.sendResetOtp({ email });
+      } else {
+        await ChainSecureAPI.sendOtp({ email, name });
+      }
       setOtpCountdown(60);
       setOtpDigits(['', '', '', '', '', '']);
       setSuccessMsg('New OTP sent!');
@@ -164,24 +185,59 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, isDarkMode 
     }
   };
 
+  const handleSendResetOtp = async () => {
+    if (!email) { setError('Please enter your email.'); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      await ChainSecureAPI.sendResetOtp({ email });
+      setForgotStep('reset');
+      setOtpCountdown(60);
+      setOtpDigits(['', '', '', '', '', '']);
+    } catch (err: any) {
+      setError(err.message || 'Failed to send reset code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    const code = otpDigits.join('');
+    if (code.length < 6) { setError('Please enter the complete 6-digit code.'); return; }
+    if (!password || password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      await ChainSecureAPI.resetPassword({ email, otp_code: code, new_password: password });
+      setForgotStep('success');
+      setTimeout(() => { setTab('login'); setForgotStep('email'); setPassword(''); setOtpDigits(['', '', '', '', '', '']); }, 2000);
+    } catch (err: any) {
+      setError(err.message || 'Password reset failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!open) return null;
 
   const btnSx = {
-    background: isDarkMode ? tokens.colors.darkText : tokens.colors.lightText,
-    color: isDarkMode ? tokens.colors.darkBg : tokens.colors.lightBg,
-    borderRadius: tokens.borderRadius.md,
-    fontWeight: 600,
-    fontSize: '0.9rem',
-    py: 1.2,
+    background: tokens.colors.primary,
+    color: '#fff',
+    borderRadius: '12px',
+    fontWeight: 700,
+    fontSize: '1rem',
+    py: 1.5,
     textTransform: 'none' as const,
     fontFamily: tokens.typography.heading,
-    boxShadow: 'none',
+    boxShadow: `0 8px 16px ${tokens.colors.primary}40`,
+    transition: 'all 0.2s',
     '&:hover': {
-      background: isDarkMode ? tokens.colors.darkTextSecondary : tokens.colors.lightTextSecondary,
-      transform: 'none',
-      boxShadow: 'none',
+      background: '#2563eb',
+      transform: 'translateY(-2px)',
+      boxShadow: `0 12px 20px ${tokens.colors.primary}60`,
     },
-    '&:disabled': { opacity: 0.5 },
+    '&:active': { transform: 'translateY(0)' },
+    '&:disabled': { opacity: 0.6, background: tokens.colors.primary, transform: 'none', boxShadow: 'none' },
   };
 
   return (
@@ -189,57 +245,73 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, isDarkMode 
       <Box
         sx={{
           position: 'fixed', inset: 0,
-          background: isDarkMode ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)',
-          backdropFilter: 'blur(8px)',
+          background: isDarkMode ? 'rgba(15, 23, 42, 0.7)' : 'rgba(241, 245, 249, 0.7)',
+          backdropFilter: 'blur(16px)',
           zIndex: 1500,
           display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2,
         }}
         onClick={onClose}
       >
+        {/* Animated Background Blobs */}
+        <Box sx={{
+          position: 'absolute', width: 400, height: 400, borderRadius: '50%',
+          background: `radial-gradient(circle, ${tokens.colors.primary} 0%, transparent 70%)`,
+          opacity: 0.15, filter: 'blur(60px)',
+          top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          pointerEvents: 'none',
+        }} />
+
         <Card
           sx={{
-            maxWidth: 400, width: '100%', overflow: 'hidden',
-            background: isDarkMode ? tokens.colors.darkBg : tokens.colors.lightBg,
-            border: isDarkMode ? `1px solid ${tokens.colors.darkBorder}` : `1px solid ${tokens.colors.lightBorder}`,
-            borderRadius: tokens.borderRadius.lg,
-            boxShadow: tokens.shadows.xl,
+            maxWidth: 440, width: '100%', overflow: 'hidden', position: 'relative',
+            background: isDarkMode ? 'rgba(30, 41, 59, 0.65)' : 'rgba(255, 255, 255, 0.8)',
+            backdropFilter: 'blur(24px)',
+            border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.05)',
+            borderRadius: '24px',
+            boxShadow: isDarkMode ? '0 25px 50px -12px rgba(0,0,0,0.5)' : '0 25px 50px -12px rgba(0,0,0,0.1)',
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
+          <CardContent sx={{ p: { xs: 4, sm: 5 } }}>
             {/* Header */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                {signupStep === 'otp' && tab === 'signup' && (
-                  <IconButton size="small" onClick={() => { setSignupStep('details'); setError(null); }} sx={{ mr: 1, color: 'text.secondary' }}>
+                {((signupStep === 'otp' && tab === 'signup') || (forgotStep === 'reset' && tab === 'forgot_password') || tab === 'forgot_password') && (
+                  <IconButton size="small" onClick={() => { 
+                    if (tab === 'forgot_password' && forgotStep === 'email') { setTab('login'); }
+                    else if (tab === 'forgot_password' && forgotStep === 'reset') { setForgotStep('email'); }
+                    else { setSignupStep('details'); } 
+                    setError(null); 
+                  }} sx={{ mr: 1, color: isDarkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)' }}>
                     <ArrowBackIcon fontSize="small" />
                   </IconButton>
                 )}
-                <Typography variant="h6" component="span" sx={{
+                <Typography variant="h5" component="span" sx={{
                   fontFamily: tokens.typography.display,
-                  fontWeight: 700,
-                  letterSpacing: '-0.02em',
-                  color: 'text.primary',
+                  fontWeight: 800,
+                  letterSpacing: '-0.03em',
+                  color: isDarkMode ? '#fff' : '#1e293b',
                 }}>
-                  {tab === 'login' ? 'Welcome Back' : signupStep === 'details' ? 'Create Account' : signupStep === 'otp' ? 'Verify Email' : 'All Set!'}
+                  {tab === 'login' ? 'Welcome Back' : tab === 'forgot_password' ? (forgotStep === 'email' ? 'Reset Password' : forgotStep === 'reset' ? 'Set New Password' : 'Password Reset') : signupStep === 'details' ? 'Create Account' : signupStep === 'otp' ? 'Verify Email' : 'All Set!'}
                 </Typography>
               </Box>
-              <IconButton onClick={onClose} sx={{ color: 'text.secondary', p: 0.5 }}><CloseIcon /></IconButton>
+              <IconButton onClick={onClose} sx={{ color: isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)' }}><CloseIcon /></IconButton>
             </Box>
 
             {/* Tabs */}
-            {signupStep === 'details' && (
+            {signupStep === 'details' && tab !== 'forgot_password' && (
               <Box sx={{ 
-                display: 'flex', gap: 1, mb: 4, p: 0.5, borderRadius: tokens.borderRadius.md, 
-                background: isDarkMode ? tokens.colors.darkSurfaceLight : tokens.colors.lightSurfaceAlt 
+                display: 'flex', gap: 1, mb: 4, p: 0.5, borderRadius: '12px', 
+                background: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.04)'
               }}>
                 {(['login', 'signup'] as AuthTab[]).map((t) => (
                   <Button key={t} fullWidth onClick={() => { setTab(t); setError(null); }} sx={{
-                    borderRadius: tokens.borderRadius.sm, py: 0.8, fontWeight: 600, textTransform: 'none', fontSize: '0.85rem',
-                    color: tab === t ? (isDarkMode ? tokens.colors.darkBg : tokens.colors.lightBg) : 'text.secondary',
-                    background: tab === t ? (isDarkMode ? tokens.colors.darkText : tokens.colors.lightText) : 'transparent',
-                    boxShadow: 'none',
-                    '&:hover': { background: tab === t ? undefined : (isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)') },
+                    borderRadius: '10px', py: 1, fontWeight: 600, textTransform: 'none', fontSize: '0.85rem',
+                    color: tab === t ? (isDarkMode ? '#fff' : '#000') : (isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)'),
+                    background: tab === t ? (isDarkMode ? 'rgba(255,255,255,0.1)' : '#fff') : 'transparent',
+                    boxShadow: tab === t && !isDarkMode ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                    transition: 'all 0.2s',
+                    '&:hover': { background: tab === t ? undefined : (isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)') },
                   }}>
                     {t === 'login' ? 'Login' : 'Sign Up'}
                   </Button>
@@ -247,48 +319,53 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, isDarkMode 
               </Box>
             )}
 
-            {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 3, borderRadius: tokens.borderRadius.sm, '& .MuiAlert-message': { fontSize: '0.85rem' } }}>{error}</Alert>}
-            {successMsg && <Alert severity="success" sx={{ mb: 3, borderRadius: tokens.borderRadius.sm, '& .MuiAlert-message': { fontSize: '0.85rem' } }}>{successMsg}</Alert>}
+            {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 3, borderRadius: '12px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', '& .MuiAlert-icon': { color: '#ef4444' } }}>{error}</Alert>}
+            {successMsg && <Alert severity="success" sx={{ mb: 3, borderRadius: '12px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', '& .MuiAlert-icon': { color: '#10b981' } }}>{successMsg}</Alert>}
 
             {/* LOGIN */}
             {tab === 'login' && (
-              <Fade in timeout={300}><Box>
+              <Fade in timeout={400}><Box>
                 <TextField fullWidth label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} sx={{ mb: 2 }}
-                  slotProps={{ input: { startAdornment: <EmailIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 18 }} /> } }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
-                <TextField fullWidth label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} sx={{ mb: 4 }}
-                  slotProps={{ input: { startAdornment: <LockIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 18 }} /> } }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
+                  slotProps={{ input: { startAdornment: <EmailIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 20 }} /> } }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()} variant="outlined" />
+                <Box sx={{ mb: 4 }}>
+                  <TextField fullWidth label="Password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
+                    slotProps={{ input: { startAdornment: <LockIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 20 }} />, endAdornment: passwordEndAdornment } }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleLogin()} variant="outlined" />
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                    <Button size="small" onClick={() => { setTab('forgot_password'); setError(null); }} sx={{ textTransform: 'none', color: isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)', fontWeight: 600, fontSize: '0.75rem', '&:hover': { color: tokens.colors.primary } }}>Forgot Password?</Button>
+                  </Box>
+                </Box>
                 <Button fullWidth variant="contained" onClick={handleLogin} disabled={loading} sx={btnSx}>
-                  {loading ? <CircularProgress size={20} sx={{ color: isDarkMode ? tokens.colors.darkBg : tokens.colors.lightBg }} /> : 'Login'}
+                  {loading ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : 'Login to Dashboard'}
                 </Button>
               </Box></Fade>
             )}
 
             {/* SIGNUP STEP 1 */}
             {tab === 'signup' && signupStep === 'details' && (
-              <Fade in timeout={300}><Box>
+              <Fade in timeout={400}><Box>
                 <TextField fullWidth label="Full Name" value={name} onChange={(e) => setName(e.target.value)} sx={{ mb: 2 }}
-                  slotProps={{ input: { startAdornment: <PersonIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 18 }} /> } }} />
+                  slotProps={{ input: { startAdornment: <PersonIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 20 }} /> } }} />
                 <TextField fullWidth label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} sx={{ mb: 2 }}
-                  slotProps={{ input: { startAdornment: <EmailIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 18 }} /> } }} />
-                <TextField fullWidth label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                  slotProps={{ input: { startAdornment: <EmailIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 20 }} /> } }} />
+                <TextField fullWidth label="Password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
                   helperText="Minimum 6 characters" sx={{ mb: 4 }}
-                  slotProps={{ input: { startAdornment: <LockIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 18 }} /> } }}
+                  slotProps={{ input: { startAdornment: <LockIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 20 }} />, endAdornment: passwordEndAdornment } }}
                   onKeyDown={(e) => e.key === 'Enter' && handleSendOtp()} />
                 <Button fullWidth variant="contained" onClick={handleSendOtp} disabled={loading} sx={btnSx}>
-                  {loading ? <CircularProgress size={20} sx={{ color: isDarkMode ? tokens.colors.darkBg : tokens.colors.lightBg }} /> : 'Send Verification Code'}
+                  {loading ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : 'Continue'}
                 </Button>
               </Box></Fade>
             )}
 
             {/* SIGNUP STEP 2 — OTP */}
             {tab === 'signup' && signupStep === 'otp' && (
-              <Fade in timeout={300}><Box>
-                <Typography variant="body2" sx={{ mb: 4, color: 'text.secondary', textAlign: 'center', lineHeight: 1.6 }}>
+              <Fade in timeout={400}><Box>
+                <Typography variant="body2" sx={{ mb: 4, color: isDarkMode ? 'rgba(255,255,255,0.7)' : 'text.secondary', textAlign: 'center', lineHeight: 1.6 }}>
                   We've sent a 6-digit code to <br/><strong>{email}</strong>
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', mb: 4 }}>
+                <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', mb: 4 }}>
                   {otpDigits.map((digit, i) => (
                     <Box key={i} component="input"
                       ref={(el: HTMLInputElement | null) => { otpRefs.current[i] = el; }}
@@ -298,26 +375,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, isDarkMode 
                       onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleOtpKeyDown(i, e)}
                       onPaste={i === 0 ? handleOtpPaste : undefined}
                       sx={{
-                        width: 44, height: 52, borderRadius: tokens.borderRadius.md,
-                        border: isDarkMode ? `1px solid ${tokens.colors.darkBorder}` : `1px solid ${tokens.colors.lightBorder}`,
-                        background: isDarkMode ? tokens.colors.darkSurfaceLight : tokens.colors.lightSurfaceAlt,
-                        color: isDarkMode ? tokens.colors.darkText : tokens.colors.lightText,
-                        fontSize: '1.25rem', fontWeight: 600, textAlign: 'center', outline: 'none',
+                        width: 48, height: 56, borderRadius: '12px',
+                        border: isDarkMode ? `1px solid rgba(255,255,255,0.1)` : `1px solid rgba(0,0,0,0.1)`,
+                        background: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
+                        color: isDarkMode ? '#fff' : '#000',
+                        fontSize: '1.5rem', fontWeight: 700, textAlign: 'center', outline: 'none',
                         fontFamily: tokens.typography.mono, transition: 'all 0.2s ease',
-                        '&:focus': { borderColor: tokens.colors.primary, borderWidth: '2px' },
+                        boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)',
+                        '&:focus': { borderColor: tokens.colors.primary, background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#fff', boxShadow: `0 0 0 3px ${tokens.colors.primary}30` },
                       }}
                     />
                   ))}
                 </Box>
                 <Button fullWidth variant="contained" onClick={handleVerifyAndRegister}
                   disabled={loading || otpDigits.some((d) => !d)} sx={{ ...btnSx, mb: 3 }}>
-                  {loading ? <CircularProgress size={20} sx={{ color: isDarkMode ? tokens.colors.darkBg : tokens.colors.lightBg }} /> : 'Verify & Create Account'}
+                  {loading ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : 'Verify & Create Account'}
                 </Button>
-                <Divider sx={{ my: 2 }} />
+                <Divider sx={{ my: 3, borderColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }} />
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', mb: 1, display: 'block' }}>Didn't receive the code?</Typography>
+                  <Typography variant="caption" sx={{ color: isDarkMode ? 'rgba(255,255,255,0.5)' : 'text.secondary', mb: 1, display: 'block' }}>Didn't receive the code?</Typography>
                   <Button size="small" onClick={handleResendOtp} disabled={loading || otpCountdown > 0}
-                    sx={{ textTransform: 'none', fontWeight: 600, color: 'text.primary', '&:disabled': { color: 'text.secondary' } }}>
+                    sx={{ textTransform: 'none', fontWeight: 600, color: tokens.colors.primary, '&:disabled': { color: isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)' } }}>
                     {otpCountdown > 0 ? `Resend in ${otpCountdown}s` : 'Resend Code'}
                   </Button>
                 </Box>
@@ -327,10 +405,83 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, isDarkMode 
             {/* SIGNUP STEP 3 — SUCCESS */}
             {tab === 'signup' && signupStep === 'success' && (
               <Fade in timeout={500}>
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <CheckCircleIcon sx={{ fontSize: 56, color: tokens.colors.success, mb: 2 }} />
-                  <Typography variant="h6" sx={{ fontFamily: tokens.typography.heading, fontWeight: 700, mb: 1 }}>Account Created</Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>Welcome to ChainSecure, {name}. You're now signed in.</Typography>
+                <Box sx={{ textAlign: 'center', py: 5 }}>
+                  <CheckCircleIcon sx={{ fontSize: 64, color: tokens.colors.success, mb: 3 }} />
+                  <Typography variant="h5" sx={{ fontFamily: tokens.typography.heading, fontWeight: 800, mb: 1.5, color: isDarkMode ? '#fff' : '#000' }}>Account Created</Typography>
+                  <Typography variant="body1" sx={{ color: isDarkMode ? 'rgba(255,255,255,0.7)' : 'text.secondary' }}>Welcome to ChainSecure, {name}. You're now signed in.</Typography>
+                </Box>
+              </Fade>
+            )}
+
+            {/* FORGOT PASSWORD STEP 1 — EMAIL */}
+            {tab === 'forgot_password' && forgotStep === 'email' && (
+              <Fade in timeout={400}><Box>
+                <Typography variant="body2" sx={{ mb: 4, color: isDarkMode ? 'rgba(255,255,255,0.7)' : 'text.secondary', lineHeight: 1.6 }}>
+                  Enter your email address and we'll send you a 6-digit code to reset your password.
+                </Typography>
+                <TextField fullWidth label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} sx={{ mb: 4 }}
+                  slotProps={{ input: { startAdornment: <EmailIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 20 }} /> } }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendResetOtp()} variant="outlined" />
+                <Button fullWidth variant="contained" onClick={handleSendResetOtp} disabled={loading} sx={btnSx}>
+                  {loading ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : 'Send Reset Code'}
+                </Button>
+              </Box></Fade>
+            )}
+
+            {/* FORGOT PASSWORD STEP 2 — RESET */}
+            {tab === 'forgot_password' && forgotStep === 'reset' && (
+              <Fade in timeout={400}><Box>
+                <Typography variant="body2" sx={{ mb: 4, color: isDarkMode ? 'rgba(255,255,255,0.7)' : 'text.secondary', textAlign: 'center', lineHeight: 1.6 }}>
+                  We've sent a 6-digit code to <br/><strong>{email}</strong>
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', mb: 4 }}>
+                  {otpDigits.map((digit, i) => (
+                    <Box key={i} component="input"
+                      ref={(el: HTMLInputElement | null) => { otpRefs.current[i] = el; }}
+                      type="text" inputMode="numeric" maxLength={1}
+                      value={digit}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleOtpChange(i, e.target.value)}
+                      onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleOtpKeyDown(i, e)}
+                      onPaste={i === 0 ? handleOtpPaste : undefined}
+                      sx={{
+                        width: 48, height: 56, borderRadius: '12px',
+                        border: isDarkMode ? `1px solid rgba(255,255,255,0.1)` : `1px solid rgba(0,0,0,0.1)`,
+                        background: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
+                        color: isDarkMode ? '#fff' : '#000',
+                        fontSize: '1.5rem', fontWeight: 700, textAlign: 'center', outline: 'none',
+                        fontFamily: tokens.typography.mono, transition: 'all 0.2s ease',
+                        boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)',
+                        '&:focus': { borderColor: tokens.colors.primary, background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#fff', boxShadow: `0 0 0 3px ${tokens.colors.primary}30` },
+                      }}
+                    />
+                  ))}
+                </Box>
+                <TextField fullWidth label="New Password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
+                  helperText="Minimum 6 characters" sx={{ mb: 4 }}
+                  slotProps={{ input: { startAdornment: <LockIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 20 }} />, endAdornment: passwordEndAdornment } }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleResetPassword()} variant="outlined" />
+                <Button fullWidth variant="contained" onClick={handleResetPassword}
+                  disabled={loading || otpDigits.some((d) => !d) || password.length < 6} sx={{ ...btnSx, mb: 3 }}>
+                  {loading ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : 'Reset Password'}
+                </Button>
+                <Divider sx={{ my: 3, borderColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }} />
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="caption" sx={{ color: isDarkMode ? 'rgba(255,255,255,0.5)' : 'text.secondary', mb: 1, display: 'block' }}>Didn't receive the code?</Typography>
+                  <Button size="small" onClick={handleResendOtp} disabled={loading || otpCountdown > 0}
+                    sx={{ textTransform: 'none', fontWeight: 600, color: tokens.colors.primary, '&:disabled': { color: isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)' } }}>
+                    {otpCountdown > 0 ? `Resend in ${otpCountdown}s` : 'Resend Code'}
+                  </Button>
+                </Box>
+              </Box></Fade>
+            )}
+
+            {/* FORGOT PASSWORD STEP 3 — SUCCESS */}
+            {tab === 'forgot_password' && forgotStep === 'success' && (
+              <Fade in timeout={500}>
+                <Box sx={{ textAlign: 'center', py: 5 }}>
+                  <CheckCircleIcon sx={{ fontSize: 64, color: tokens.colors.success, mb: 3 }} />
+                  <Typography variant="h5" sx={{ fontFamily: tokens.typography.heading, fontWeight: 800, mb: 1.5, color: isDarkMode ? '#fff' : '#000' }}>Password Reset!</Typography>
+                  <Typography variant="body1" sx={{ color: isDarkMode ? 'rgba(255,255,255,0.7)' : 'text.secondary' }}>Your password has been changed successfully.</Typography>
                 </Box>
               </Fade>
             )}

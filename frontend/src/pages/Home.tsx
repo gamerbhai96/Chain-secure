@@ -13,9 +13,11 @@ import ChainSecureAPI from '../services/api';
 import type { AnalysisResponse } from '../types/api';
 import { CryptoPrices } from '../components/CryptoPrices';
 import { CryptoNews } from '../components/CryptoNews';
+import { useAuth } from '../context/AuthContext';
 
 interface HomeProps {
   isDarkMode: boolean;
+  onLogin?: () => void;
 }
 
 const FeatureCard = styled(Box)<{ theme?: Theme }>(({ theme }) => ({
@@ -34,14 +36,25 @@ const FeatureCard = styled(Box)<{ theme?: Theme }>(({ theme }) => ({
   },
 }));
 
-export const Home: React.FC<HomeProps> = ({ isDarkMode }) => {
+export const Home: React.FC<HomeProps> = ({ isDarkMode, onLogin }) => {
   const [address, setAddress] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
 
   const handleAnalyze = async () => {
     if (!address) return;
+    
+    if (!isAuthenticated) {
+      const saved = localStorage.getItem('chainsecure_scans');
+      const history = saved ? JSON.parse(saved) : [];
+      if (history.length >= 1) {
+        if (onLogin) onLogin();
+        return;
+      }
+    }
+    
     try {
       setLoading(true);
       setError(null);
